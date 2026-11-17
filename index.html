@@ -44,11 +44,12 @@ const TYPES = {
   s: { n:'Магазины', c:'#ff8a00' }, a: { n:'АЗС', c:'#3490dc' }, o: { n:'Вышки', c:'#b0b0b0' }
 };
 // --- данные от бота: #base64(h id,x,y,own,price; s id,x,y; a id,x,y; o id,x,y,own; i n,price,class,name; r lvl)
-let objs = [], ints = [], role = 1, botUser = '';
+let objs = [], ints = [], role = 2, botUser = 'BaRsUcHoKMarKET_bot';
 try {
-  const raw = location.hash.slice(1);
+  // данные в ?d=… (адрес после # Telegram занимает своими данными)
+  const raw = new URLSearchParams(location.search).get('d') || '';
   if (raw) {
-    const txt = new TextDecoder().decode(Uint8Array.from(atob(decodeURIComponent(raw)), c => c.charCodeAt(0)));
+    const txt = new TextDecoder().decode(Uint8Array.from(atob(raw.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0)));
     for (const p of txt.split(';')) {
       const k = p[0], f = p.slice(1).split(',');
       if (k === 'r') role = +f[0];
@@ -176,7 +177,7 @@ map.on('click', e => {
   pin = L.marker(e.latlng, { icon:L.divIcon({ className:'', html:'<div class="new"></div>', iconSize:[22,22] }) }).addTo(map);
   createForm(x, y);
 });
-if (!objs.length && !location.hash) {
+if (!objs.length && !location.search) {
   sheet.innerHTML = '<h3>GRIZZLY — карта</h3><div class="mut">Открой карту из бота командой /map, чтобы видеть объекты и создавать новые.</div>';
   sheet.classList.add('on');
 }
