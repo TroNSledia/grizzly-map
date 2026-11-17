@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>GRIZZLY — карта</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root { --or:#ff8a00; --bg:#0d0d0d; --card:#181818; --tx:#f2f2f2; --mut:#9a9a9a; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font:15px/1.35 -apple-system,Segoe UI,Roboto,sans-serif; }
+  #map { position:absolute; inset:0; background:#4a6a8a; }
+  .leaflet-container { background:#5b7c99; }
+  #bar { position:absolute; top:8px; left:8px; right:8px; z-index:1000; display:flex; gap:6px; flex-wrap:wrap; }
+  .chip { background:rgba(13,13,13,.85); border:1px solid #333; color:var(--tx); border-radius:16px; padding:5px 10px; font-size:13px; }
+  .chip.off { opacity:.4; }
+  .chip i { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:5px; }
+  #sheet { position:absolute; left:0; right:0; bottom:0; z-index:1001; background:var(--card); border-top:2px solid var(--or);
+           border-radius:14px 14px 0 0; padding:14px 14px calc(14px + env(safe-area-inset-bottom)); transform:translateY(110%); transition:transform .2s; }
+  #sheet.on { transform:none; }
+  #sheet h3 { margin:0 0 6px; color:var(--or); font-size:17px; }
+  .mut { color:var(--mut); font-size:13px; }
+  .row { display:flex; gap:8px; margin-top:10px; }
+  .tabs button { flex:1; }
+  button { background:#262626; color:var(--tx); border:1px solid #3a3a3a; border-radius:10px; padding:10px; font-size:15px; }
+  button.pri { background:var(--or); color:#000; border-color:var(--or); font-weight:600; }
+  button.sel { border-color:var(--or); color:var(--or); }
+  button.dang { background:#3a1010; border-color:#7a2020; color:#ff7b7b; }
+  select,input { width:100%; background:#0f0f0f; color:var(--tx); border:1px solid #3a3a3a; border-radius:10px; padding:10px; font-size:15px; margin-top:8px; }
+  .pin { width:18px; height:18px; border-radius:50%; border:2px solid #000; box-shadow:0 0 0 2px rgba(255,255,255,.6); }
+  .new { width:22px; height:22px; border-radius:50%; background:var(--or); border:3px solid #fff; box-shadow:0 0 8px #000; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="bar"></div>
+<div id="sheet"></div>
+<script>
+const tg = window.Telegram && Telegram.WebApp; if (tg) { tg.ready(); tg.expand(); }
+const TYPES = {
+  h: { n:'Дома', c:'#38c172' }, H: { n:'Дома (куплены)', c:'#e3342f' },
+  s: { n:'Магазины', c:'#ff8a00' }, a: { n:'АЗС', c:'#3490dc' }, o: { n:'Вышки', c:'#b0b0b0' }
+};
+// --- данные от бота: #base64(h id,x,y,own,price; s id,x,y; a id,x,y; o id,x,y,own; i n,price,class,name; r lvl)
+let objs = [], ints = [], role = 1;
+try {
+  const raw = location.hash.slice(1);
+  if (raw) {
+    const txt = new TextDecoder().decode(Uint8Array.from(atob(decodeURIComponent(raw)), c => c.charCodeAt(0)));
+    for (const p of txt.split(';')) {
+      const k = p[0], f = p.slice(1).split(',');
+      if (k === 'r') role = +f[0];
+      else if (k === 'i') ints.push({ n:+f[0], price:+f[1], cls:f[2], name:f.slice(3).join(',') });
+      else if ('hsao'.includes(k)) objs.push({ k, id:+f[0], x:+f[1], y:+f[2], own:+(f[3]||0), price:+(f[4]||0) });
+    }
+  }
+} catch (e) { console.log(e); }
+
+const map = L.map('map', { crs:L.CRS.Simple, minZoom:-3, maxZoom:3, zoomControl:false, attributionControl:false, zoomSnap:.25 });
+const B = [[-3000,-3000],[3000,3000]];
+L.imageOverlay('map.jpg', B).addTo(map);
+map.fitBounds(B); map.setMaxBounds([[-3400,-3400],[3400,3400]]);
+const ll = (x, y) => L.latLng(y, x);
+
+const layers = {}, shown = {};
+for (const k in TYPES) { layers[k] = L.layerGroup().addTo(map); shown[k] = true; }
+for (const o of objs) {
+  const k = o.k === 'h' && o.own ? 'H' : o.k;
+  const m = L.marker(ll(o.x, o.y), { icon:L.divIcon({ className:'', html:`<div class="pin" style="background:${TYPES[k].c}"></div>`, iconSize:[18,18] }) });
+  m.on('click', ev => { L.DomEvent.stopPropagation(ev); card(o); });
+  m.addTo(layers[k]);
+}
+const bar = document.getElementById('bar');
+for (const k in TYPES) {
+  const cnt = objs.filter(o => (o.k === 'h' && o.own ? 'H' : o.k) === k).length;
+  const b = document.createElement('span'); b.className = 'chip';
+  b.innerHTML = `<i style="background:${TYPES[k].c}"></i>${TYPES[k].n} ${cnt}`;
+  b.onclick = () => { shown[k] = !shown[k]; b.classList.toggle('off', !shown[k]); shown[k] ? layers[k].addTo(map) : map.removeLayer(layers[k]); };
+  bar.appendChild(b);
+}
+
+const sheet = document.getElementById('sheet');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const money = n => '$' + Number(n).toLocaleString('ru-RU');
+function close() { sheet.classList.remove('on'); if (pin) { map.removeLayer(pin); pin = null; } }
+function send(d) {
+  if (!tg || !tg.sendData) return alert('Открой карту кнопкой «🗺 Карта» в боте');
+  tg.sendData(JSON.stringify(d));
+}
+
+function card(o) {
+  if (pin) { map.removeLayer(pin); pin = null; }
+  const title = { h:'🏠 Дом', s:'🛒 Магазин', a:'⛽ АЗС', o:'🛢 Нефтевышка' }[o.k] + ' №' + o.id;
+  let info = `📍 ${o.x}, ${o.y}`;
+  if (o.k === 'h') info += `<br>${o.own ? 'Куплен' : 'Свободен'} · ${money(o.price)}`;
+  if (o.k === 'o') info += `<br>${o.own ? 'Есть владелец' : 'Свободна'}`;
+  let btns = '';
+  if (role >= 3 && (o.k === 'h' || o.k === 's')) btns = `<button class="dang" id="del">🗑 Удалить</button>`;
+  sheet.innerHTML = `<h3>${title}</h3><div class="mut">${info}</div>
+    ${o.k==='h'&&o.own?'<div class="mut" style="margin-top:6px">Купленный дом с карты не удаляется</div>':''}
+    <div class="row">${btns}<button id="x">Закрыть</button></div>`;
+  sheet.classList.add('on');
+  document.getElementById('x').onclick = close;
+  const d = document.getElementById('del');
+  if (d) d.onclick = () => { if (o.k === 'h' && o.own) return; send({ a:'del', t:o.k, id:o.id }); };
+}
+
+let pin = null, kind = 'house';
+function createForm(x, y) {
+  const opts = ints.map(i => `<option value="${i.n}">${esc(i.name)} · ${esc(i.cls)} · ${money(i.price)}</option>`).join('');
+  sheet.innerHTML = `<h3>📍 ${x}, ${y}</h3><div class="mut">Что поставить здесь? Высоту земли бот подберёт сам.</div>
+    <div class="row tabs"><button id="th">🏠 Дом</button><button id="ts">🛒 Магазин</button></div>
+    <div id="f"></div>
+    <div class="row"><button id="x">Отмена</button><button class="pri" id="go">Создать</button></div>`;
+  const f = document.getElementById('f');
+  const draw = () => {
+    document.getElementById('th').className = kind === 'house' ? 'sel' : '';
+    document.getElementById('ts').className = kind === 'shop' ? 'sel' : '';
+    f.innerHTML = kind === 'house'
+      ? (ints.length ? `<select id="int">${opts}</select>` : `<input id="int" type="number" placeholder="Номер интерьера">`) + `<input id="price" type="number" inputmode="numeric" placeholder="Цена, $">`
+      : `<input id="name" maxlength="40" placeholder="Название (по умолчанию «Магазин 24/7»)">`;
+    const s = document.getElementById('int');
+    if (s && s.tagName === 'SELECT') {
+      const fill = () => { const i = ints.find(i => i.n == s.value); if (i) document.getElementById('price').value = i.price; };
+      s.onchange = fill; fill();
+    }
+  };
+  document.getElementById('th').onclick = () => { kind = 'house'; draw(); };
+  document.getElementById('ts').onclick = () => { kind = 'shop'; draw(); };
+  document.getElementById('x').onclick = close;
+  document.getElementById('go').onclick = () => {
+    if (kind === 'house') {
+      const n = +document.getElementById('int').value, p = +document.getElementById('price').value;
+      if (!n) return alert('Выбери интерьер');
+      send({ a:'house', x, y, interior:n, price:p });
+    } else {
+      send({ a:'shop', x, y, name:document.getElementById('name').value.trim() });
+    }
+  };
+  draw(); sheet.classList.add('on');
+}
+
+map.on('click', e => {
+  if (role < 2) return;
+  const x = Math.round(e.latlng.lng), y = Math.round(e.latlng.lat);
+  if (Math.abs(x) > 3000 || Math.abs(y) > 3000) return;
+  if (pin) map.removeLayer(pin);
+  pin = L.marker(e.latlng, { icon:L.divIcon({ className:'', html:'<div class="new"></div>', iconSize:[22,22] }) }).addTo(map);
+  createForm(x, y);
+});
+if (!objs.length && !location.hash) {
+  sheet.innerHTML = '<h3>GRIZZLY — карта</h3><div class="mut">Открой карту из бота командой /map, чтобы видеть объекты и создавать новые.</div>';
+  sheet.classList.add('on');
+}
+</script>
+</body>
+</html>
