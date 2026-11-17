@@ -96,8 +96,21 @@ function send(d) {
     if (d.a === 'house') p = `mh_${n(d.x)}_${n(d.y)}_${n(d.interior)}_${n(d.price || 0)}`;
     else if (d.a === 'shop') p = `ms_${n(d.x)}_${n(d.y)}`;
     else p = `md_${d.t}_${n(d.id)}`;
-    tg.openTelegramLink(`https://t.me/${botUser}?start=${p}`);
-    setTimeout(() => tg.close(), 300);
+    const cmd = '/start ' + p;
+    sheet.innerHTML = `<h3>Отправь боту команду</h3>
+      <div class="mut">Скопируй и отправь её в чат с ботом — он попросит подтверждение.</div>
+      <input id="cmd" readonly value="${cmd}">
+      <div class="row"><button id="lnk">↗ Через ссылку</button><button class="pri" id="cp">📋 Скопировать и закрыть</button></div>`;
+    sheet.classList.add('on');
+    const inp = document.getElementById('cmd'); inp.onclick = () => inp.select();
+    document.getElementById('cp').onclick = async () => {
+      let ok = false;
+      try { await navigator.clipboard.writeText(cmd); ok = true; } catch (e) {}
+      if (!ok) { inp.select(); try { ok = document.execCommand('copy'); } catch (e) {} }
+      if (ok) { tg.showAlert ? tg.showAlert('Скопировано. Вставь в чат с ботом и отправь.', () => tg.close()) : tg.close(); }
+      else alert('Не удалось скопировать: выдели текст и скопируй вручную');
+    };
+    document.getElementById('lnk').onclick = () => tg.openTelegramLink(`https://t.me/${botUser}?start=${p}`);
   } else {
     tg.sendData(JSON.stringify(d));
   }
