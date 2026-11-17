@@ -44,7 +44,7 @@ const TYPES = {
   s: { n:'Магазины', c:'#ff8a00' }, a: { n:'АЗС', c:'#3490dc' }, o: { n:'Вышки', c:'#b0b0b0' }
 };
 // --- данные от бота: #base64(h id,x,y,own,price; s id,x,y; a id,x,y; o id,x,y,own; i n,price,class,name; r lvl)
-let objs = [], ints = [], role = 1;
+let objs = [], ints = [], role = 1, botUser = '';
 try {
   const raw = location.hash.slice(1);
   if (raw) {
@@ -52,6 +52,7 @@ try {
     for (const p of txt.split(';')) {
       const k = p[0], f = p.slice(1).split(',');
       if (k === 'r') role = +f[0];
+      else if (k === 'u') botUser = f[0];
       else if (k === 'i') ints.push({ n:+f[0], price:+f[1], cls:f[2], name:f.slice(3).join(',') });
       else if ('hsao'.includes(k)) objs.push({ k, id:+f[0], x:+f[1], y:+f[2], own:+(f[3]||0), price:+(f[4]||0) });
     }
@@ -85,9 +86,21 @@ const sheet = document.getElementById('sheet');
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 const money = n => '$' + Number(n).toLocaleString('ru-RU');
 function close() { sheet.classList.remove('on'); if (pin) { map.removeLayer(pin); pin = null; } }
+// обратно в бота: из кнопки под сообщением — ссылкой t.me/бот?start=..., из нижней клавиатуры — sendData
+const n = v => (v < 0 ? 'm' + Math.abs(Math.round(v)) : String(Math.round(v)));
 function send(d) {
-  if (!tg || !tg.sendData) return alert('Открой карту кнопкой «🗺 Карта» в боте');
-  tg.sendData(JSON.stringify(d));
+  if (!tg) return alert('Открой карту из бота командой /map');
+  const inline = !!(tg.initDataUnsafe && tg.initDataUnsafe.query_id) || !tg.sendData || botUser;
+  if (inline && botUser) {
+    let p;
+    if (d.a === 'house') p = `mh_${n(d.x)}_${n(d.y)}_${n(d.interior)}_${n(d.price || 0)}`;
+    else if (d.a === 'shop') p = `ms_${n(d.x)}_${n(d.y)}`;
+    else p = `md_${d.t}_${n(d.id)}`;
+    tg.openTelegramLink(`https://t.me/${botUser}?start=${p}`);
+    setTimeout(() => tg.close(), 300);
+  } else {
+    tg.sendData(JSON.stringify(d));
+  }
 }
 
 function card(o) {
@@ -120,7 +133,7 @@ function createForm(x, y) {
     document.getElementById('ts').className = kind === 'shop' ? 'sel' : '';
     f.innerHTML = kind === 'house'
       ? (ints.length ? `<select id="int">${opts}</select>` : `<input id="int" type="number" placeholder="Номер интерьера">`) + `<input id="price" type="number" inputmode="numeric" placeholder="Цена, $">`
-      : `<input id="name" maxlength="40" placeholder="Название (по умолчанию «Магазин 24/7»)">`;
+      : `<div class="mut" style="margin-top:8px">Магазин 24/7. Название и вход можно поправить в игре: /shopenter, /shopout</div>`;
     const s = document.getElementById('int');
     if (s && s.tagName === 'SELECT') {
       const fill = () => { const i = ints.find(i => i.n == s.value); if (i) document.getElementById('price').value = i.price; };
@@ -136,7 +149,7 @@ function createForm(x, y) {
       if (!n) return alert('Выбери интерьер');
       send({ a:'house', x, y, interior:n, price:p });
     } else {
-      send({ a:'shop', x, y, name:document.getElementById('name').value.trim() });
+      send({ a:'shop', x, y });
     }
   };
   draw(); sheet.classList.add('on');
