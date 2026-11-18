@@ -63,8 +63,17 @@ const API = new URLSearchParams(location.search).get('api') || 'https://grizzly.
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
 async function call(req) {
-  const r = await fetch(API, { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ initData: tg ? tg.initData : '', req }) });
-  return r.json();
+  const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 25000);
+  try {
+    // text/plain — «простой» запрос без предварительного OPTIONS (CORS)
+    const r = await fetch(API, { method:'POST', headers:{ 'content-type':'text/plain' }, body: JSON.stringify({ initData: tg ? tg.initData : '', req }), signal: ac.signal });
+    const txt = await r.text();
+    try { return JSON.parse(txt); } catch { return { ok:false, err:'HTTP ' + r.status + ': ' + txt.slice(0, 300) }; }
+  } catch (e) {
+    let ping = '';
+    try { ping = await (await fetch(API + '/ping')).text(); } catch (e2) { ping = 'ping: ' + e2; }
+    return { ok:false, err:(e.name === 'AbortError' ? 'Таймаут 25 с' : String(e)) + '\n/ping → ' + ping.slice(0, 200) };
+  } finally { clearTimeout(t); }
 }
 const cm = CodeMirror($('ed'), { lineNumbers:true, mode:'lua', indentUnit:4, tabSize:4, indentWithTabs:false, lineWrapping:false, inputStyle:'contenteditable', readOnly:'nocursor' });
 let cur = null, saved = '', marks = [];
