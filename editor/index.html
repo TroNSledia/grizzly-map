@@ -62,6 +62,7 @@ if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor && tg.setHeaderColor('#1111
 const API = new URLSearchParams(location.search).get('api') || 'https://grizzly.kuzea1945.workers.dev';
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+const parts = t => { const a = []; for (let i = 0; i < t.length; i += 15000) a.push(t.slice(i, i + 15000)); return a.length ? a : ['']; };
 async function call(req) {
   const ac = new AbortController(); const t = setTimeout(() => ac.abort(), 25000);
   try {
@@ -109,6 +110,7 @@ $('file').onchange = async () => {
   $('info').textContent = 'Открываю…';
   const d = await call({ a:'ed_open', res, rel });
   if (!d.ok) { $('info').textContent = ''; return showSheet('<h3>Не открыть</h3><div class="err">' + esc(d.err) + '</div><div class="row"><button onclick="closeSheet()">OK</button></div>'); }
+  if (Array.isArray(d.text)) d.text = d.text.join('');
   cur = { res, rel }; saved = d.text;
   cm.setOption('mode', /\.xml$/i.test(rel) ? 'xml' : 'lua');
   cm.setOption('readOnly', false);
@@ -161,7 +163,7 @@ $('bSave').onclick = async () => {
   const text = cm.getValue();
   if (text === saved) return showSheet('<h3>Без изменений</h3><div class="row"><button onclick="closeSheet()">OK</button></div>');
   $('bSave').disabled = true;
-  const d = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text, dry:true }).catch(e => ({ ok:false, err:String(e) }));
+  const d = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text:parts(text), dry:true }).catch(e => ({ ok:false, err:String(e) }));
   $('bSave').disabled = false;
   if (!d.ok) {
     const m = (d.detail || '').match(/:(\d+):/);
@@ -176,7 +178,7 @@ $('bSave').onclick = async () => {
     <div class="row"><button onclick="closeSheet()">Отмена</button><button class="pri" id="go">💾 Сохранить</button></div>`);
   $('go').onclick = async () => {
     $('go').disabled = true;
-    const r = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text, restart: $('rs').checked }).catch(e => ({ ok:false, err:String(e) }));
+    const r = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text:parts(text), restart: $('rs').checked }).catch(e => ({ ok:false, err:String(e) }));
     if (!r.ok) return showSheet('<h3>Не сохранено</h3><div class="err">' + esc(r.err + (r.detail ? '\n' + r.detail : '')) + '</div><div class="row"><button onclick="closeSheet()">OK</button></div>');
     saved = text; setInfo();
     tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success');
