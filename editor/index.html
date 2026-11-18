@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>GRIZZLY — редактор</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/lua/lua.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/xml/xml.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/search/searchcursor.min.js"></script>
+<style>
+  :root { --or:#ff8a00; --bg:#0d0d0d; --card:#171717; --line:#2a2a2a; --tx:#eee; --mut:#8d8d8d; --bad:#ff6b6b; --ok:#38c172; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--tx); font:14px/1.35 -apple-system,Segoe UI,Roboto,sans-serif; }
+  #top { display:flex; gap:6px; padding:8px; border-bottom:1px solid var(--line); background:#111; position:sticky; top:0; z-index:5; }
+  select, input { background:#0b0b0b; color:var(--tx); border:1px solid #333; border-radius:9px; padding:8px; font-size:14px; min-width:0; }
+  #res { flex:1; } #file { flex:1.3; }
+  #bar { display:flex; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line); align-items:center; }
+  button { background:#222; color:var(--tx); border:1px solid #333; border-radius:9px; padding:8px 11px; font-size:14px; }
+  button.pri { background:var(--or); color:#000; border-color:var(--or); font-weight:700; }
+  button:disabled { opacity:.45; }
+  #info { flex:1; color:var(--mut); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #info.dirty { color:var(--or); }
+  #findbar { display:none; gap:6px; padding:6px 8px; border-bottom:1px solid var(--line); }
+  #findbar input { flex:1; }
+  .CodeMirror { height:calc(100vh - 104px); background:#0d0d0d; color:#ddd; font:13px/1.45 ui-monospace,Menlo,Consolas,monospace; }
+  .CodeMirror-gutters { background:#111; border-right:1px solid var(--line); }
+  .CodeMirror-linenumber { color:#555; }
+  .CodeMirror-cursor { border-left:2px solid var(--or); }
+  .CodeMirror-selected, .CodeMirror-focused .CodeMirror-selected { background:rgba(255,138,0,.25); }
+  .cm-keyword { color:#ff8a00; } .cm-string { color:#9ccc65; } .cm-comment { color:#666; font-style:italic; }
+  .cm-number { color:#4fc3f7; } .cm-builtin { color:#ffd180; } .cm-variable-2 { color:#e0e0e0; }
+  .cm-tag { color:#ff8a00; } .cm-attribute { color:#ffd180; }
+  .hit { background:rgba(255,138,0,.45); }
+  #sheet { position:fixed; left:0; right:0; bottom:0; max-height:70vh; overflow:auto; background:var(--card); border-top:2px solid var(--or);
+           border-radius:14px 14px 0 0; padding:12px; transform:translateY(105%); transition:transform .18s; z-index:10; }
+  #sheet.on { transform:none; }
+  #sheet h3 { margin:0 0 8px; color:var(--or); font-size:16px; }
+  .fn { padding:9px 4px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; }
+  .fn span { color:var(--mut); font-size:12px; }
+  .err { color:var(--bad); white-space:pre-wrap; font-family:ui-monospace,monospace; font-size:12px; }
+  .row { display:flex; gap:8px; margin-top:10px; } .row button { flex:1; }
+  label { display:flex; gap:8px; align-items:center; margin-top:10px; }
+  #empty { padding:30px 16px; color:var(--mut); text-align:center; }
+</style>
+</head>
+<body>
+<div id="top"><select id="res"><option>Загрузка…</option></select><select id="file" disabled></select></div>
+<div id="bar">
+  <span id="info">Выбери ресурс и файл</span>
+  <button id="bFn" disabled>ƒ</button><button id="bFind" disabled>🔍</button><button id="bSave" class="pri" disabled>💾</button>
+</div>
+<div id="findbar"><input id="q" placeholder="Найти в файле"><button id="bNext">↓</button><button id="bClose">✕</button></div>
+<div id="ed"></div>
+<div id="empty"></div>
+<div id="sheet"></div>
+<script>
+const tg = window.Telegram && Telegram.WebApp;
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor && tg.setHeaderColor('#111111'); tg.setBackgroundColor && tg.setBackgroundColor('#0d0d0d'); tg.enableClosingConfirmation && tg.enableClosingConfirmation(); }
+const API = new URLSearchParams(location.search).get('api') || 'https://grizzly.kuzea1945.workers.dev';
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+async function call(req) {
+  const r = await fetch(API, { method:'POST', headers:{ 'content-type':'application/json' }, body: JSON.stringify({ initData: tg ? tg.initData : '', req }) });
+  return r.json();
+}
+const cm = CodeMirror($('ed'), { lineNumbers:true, mode:'lua', indentUnit:4, tabSize:4, indentWithTabs:false, lineWrapping:false, inputStyle:'contenteditable', readOnly:'nocursor' });
+let cur = null, saved = '', marks = [];
+const sheet = $('sheet');
+const closeSheet = () => sheet.classList.remove('on');
+function showSheet(html) { sheet.innerHTML = html; sheet.classList.add('on'); }
+function setInfo() {
+  if (!cur) return;
+  const dirty = cm.getValue() !== saved;
+  $('info').textContent = (dirty ? '● ' : '') + cur.res + '/' + cur.rel + ' · ' + cm.lineCount() + ' стр.';
+  $('info').className = dirty ? 'dirty' : '';
+}
+cm.on('change', setInfo);
+
+async function loadRes() {
+  if (!tg || !tg.initData) { $('empty').textContent = 'Открой редактор из бота: команда /editor.'; return; }
+  const d = await call({ a:'ed_res' }).catch(e => ({ ok:false, err:String(e) }));
+  if (!d.ok) { $('res').innerHTML = '<option>—</option>'; $('empty').innerHTML = '<div class="err">' + esc(d.err) + '</div>'; return; }
+  $('res').innerHTML = '<option value="">Ресурс…</option>' + d.res.map(r => `<option value="${esc(r.n)}">${esc(r.n)}${r.s === 'running' ? '' : ' (' + esc(r.s) + ')'}</option>`).join('');
+}
+$('res').onchange = async () => {
+  const res = $('res').value; $('file').disabled = true; $('file').innerHTML = '';
+  if (!res) return;
+  const d = await call({ a:'ed_files', res });
+  if (!d.ok) return showSheet('<div class="err">' + esc(d.err) + '</div>');
+  $('file').innerHTML = '<option value="">Файл…</option>' + d.files.map(f => `<option value="${esc(f.p)}">${esc(f.p)}${f.t ? ' · ' + esc(f.t) : ''}</option>`).join('');
+  $('file').disabled = false;
+};
+$('file').onchange = async () => {
+  const res = $('res').value, rel = $('file').value;
+  if (!rel) return;
+  if (cur && cm.getValue() !== saved && !confirm('Есть несохранённые изменения. Открыть другой файл?')) return;
+  $('info').textContent = 'Открываю…';
+  const d = await call({ a:'ed_open', res, rel });
+  if (!d.ok) { $('info').textContent = ''; return showSheet('<h3>Не открыть</h3><div class="err">' + esc(d.err) + '</div><div class="row"><button onclick="closeSheet()">OK</button></div>'); }
+  cur = { res, rel }; saved = d.text;
+  cm.setOption('mode', /\.xml$/i.test(rel) ? 'xml' : 'lua');
+  cm.setOption('readOnly', false);
+  cm.setValue(d.text); cm.clearHistory(); cm.scrollTo(0, 0);
+  $('empty').textContent = '';
+  ['bFn', 'bFind', 'bSave'].forEach(b => $(b).disabled = false);
+  setInfo();
+};
+
+// функции файла
+const defRe = /^\s*(?:local\s+)?function\s+([\w.:]+)|^\s*(?:local\s+)?([\w.]+)\s*=\s*function\b/;
+$('bFn').onclick = () => {
+  const list = [];
+  cm.eachLine(h => { const m = h.text.match(defRe); if (m) list.push({ n: m[1] || m[2], l: cm.getLineNumber(h) }); });
+  if (!list.length) return showSheet('<h3>Функции</h3><div style="color:var(--mut)">В файле нет функций</div>');
+  showSheet('<h3>Функции (' + list.length + ')</h3><input id="ff" placeholder="Фильтр" style="width:100%;margin-bottom:6px">' +
+    '<div id="fl">' + list.map(f => `<div class="fn" data-l="${f.l}">${esc(f.n)}<span>${f.l + 1}</span></div>`).join('') + '</div>');
+  $('fl').onclick = e => { const el = e.target.closest('.fn'); if (!el) return; closeSheet(); jump(+el.dataset.l); };
+  $('ff').oninput = () => { const q = $('ff').value.toLowerCase(); [...$('fl').children].forEach(el => el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none'); };
+};
+function jump(line, ch) {
+  cm.setCursor({ line, ch: ch || 0 });
+  cm.scrollIntoView({ line, ch: 0 }, cm.getScrollInfo().clientHeight / 3);
+  cm.focus();
+}
+
+// поиск
+let sc = null;
+$('bFind').onclick = () => { $('findbar').style.display = 'flex'; $('q').focus(); };
+$('bClose').onclick = () => { $('findbar').style.display = 'none'; marks.forEach(m => m.clear()); marks = []; sc = null; };
+$('q').oninput = () => {
+  marks.forEach(m => m.clear()); marks = []; sc = null;
+  const q = $('q').value; if (!q) return;
+  const c = cm.getSearchCursor(q, { line:0, ch:0 }, { caseFold:true });
+  let n = 0; while (c.findNext() && n < 500) { marks.push(cm.markText(c.from(), c.to(), { className:'hit' })); n++; }
+  $('info').textContent = 'Найдено: ' + n;
+};
+function findNext() {
+  const q = $('q').value; if (!q) return;
+  if (!sc || sc.q !== q) { sc = cm.getSearchCursor(q, cm.getCursor(), { caseFold:true }); sc.q = q; }
+  if (!sc.findNext()) { sc = cm.getSearchCursor(q, { line:0, ch:0 }, { caseFold:true }); sc.q = q; if (!sc.findNext()) return; }
+  cm.setSelection(sc.from(), sc.to()); cm.scrollIntoView({ from: sc.from(), to: sc.to() }, 120);
+}
+$('bNext').onclick = findNext;
+$('q').onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); findNext(); } };
+
+// сохранение: сначала проверка и подсчёт, потом подтверждение
+$('bSave').onclick = async () => {
+  if (!cur) return;
+  const text = cm.getValue();
+  if (text === saved) return showSheet('<h3>Без изменений</h3><div class="row"><button onclick="closeSheet()">OK</button></div>');
+  $('bSave').disabled = true;
+  const d = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text, dry:true }).catch(e => ({ ok:false, err:String(e) }));
+  $('bSave').disabled = false;
+  if (!d.ok) {
+    const m = (d.detail || '').match(/:(\d+):/);
+    showSheet('<h3>' + esc(d.err) + '</h3>' + (d.detail ? '<div class="err">' + esc(d.detail) + '</div>' : '') +
+      '<div class="row">' + (m ? `<button id="toErr">К строке ${m[1]}</button>` : '') + '<button onclick="closeSheet()">OK</button></div>');
+    if (m) $('toErr').onclick = () => { closeSheet(); jump(+m[1] - 1); };
+    return;
+  }
+  showSheet(`<h3>Сохранить ${esc(cur.rel)}?</h3>
+    <div>+${d.add} / −${d.del} строк. Будет сделана резервная копия, откат — /undo в боте.</div>
+    <label><input type="checkbox" id="rs" checked> Перезапустить ${esc(cur.res)}</label>
+    <div class="row"><button onclick="closeSheet()">Отмена</button><button class="pri" id="go">💾 Сохранить</button></div>`);
+  $('go').onclick = async () => {
+    $('go').disabled = true;
+    const r = await call({ a:'ed_save', res:cur.res, rel:cur.rel, text, restart: $('rs').checked }).catch(e => ({ ok:false, err:String(e) }));
+    if (!r.ok) return showSheet('<h3>Не сохранено</h3><div class="err">' + esc(r.err + (r.detail ? '\n' + r.detail : '')) + '</div><div class="row"><button onclick="closeSheet()">OK</button></div>');
+    saved = text; setInfo();
+    tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('success');
+    showSheet(`<h3>✅ Сохранено</h3><div>Копия #${r.backup}${r.restarted ? ', ресурс перезапущен' : ''}.</div><div class="row"><button onclick="closeSheet()">OK</button></div>`);
+  };
+};
+document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); $('bSave').click(); } });
+loadRes();
+</script>
+</body>
+</html>
