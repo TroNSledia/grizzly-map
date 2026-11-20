@@ -40,7 +40,7 @@
       <button type="button" class="ghost" id="btn-back" aria-label="Назад">←</button>
       <h1 id="title-edit">file</h1>
     </header>
-    <div class="lang-tabs" id="lang-tabs" role="tablist" aria-label="Язык"></div>
+    <div class="lang-tabs" id="lang-tabs" role="tablist" aria-label="Файлы"></div>
     <div id="editor-host"></div>
     <div class="out-panel" id="out-panel">
       <div class="out-head">
@@ -63,7 +63,7 @@
     <div class="modal" role="dialog" aria-modal="true">
       <h2 id="modal-title">Файл</h2>
       <p class="hint" id="modal-hint"></p>
-      <select id="modal-lang" aria-label="Язык"></select>
+      <select id="modal-lang" aria-label="Язык" hidden></select>
       <input id="modal-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
       <div class="row">
         <button type="button" id="modal-cancel">Отмена</button>
@@ -77,6 +77,6 @@
   <div class="toast" id="toast"></div>
   <input id="file-input" type="file" multiple hidden accept=".lua,.js,.ts,.tsx,.jsx,.mjs,.cjs,.py,.css,.html,.htm,.json,.md,.txt,.xml,.sql,.sh" />
 
-  <script type="module" src="app.js?v=12"></script>
+  <script type="module" src="app.js?v=13"></script>
 </body>
 </html>
