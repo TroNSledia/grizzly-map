@@ -819,6 +819,34 @@ addEventHandler("onResourceStart", resourceRoot, function()
 end)
 `;
 }
+function isPlainClientName(typed) {
+  return /^(?:client)(?:\.lua)?$/i.test(String(typed || "").trim().replace(/["'\u00AB\u00BB\u201C\u201D\u201E\s]/g, ""));
+}
+function clientBundleFor(fileName, intent) {
+  if (!/\.lua$/i.test(fileName || "")) return null;
+  const base = fileName.replace(/\.lua$/i, "");
+  if (/^client$/i.test(base)) {
+    return { server: "server.lua", meta: "meta.xml", resource: "script" };
+  }
+  if (intent && intent.side === "client" && /_client$/i.test(base)) {
+    const stem = base.replace(/_client$/i, "");
+    return {
+      server: stem + "_server.lua",
+      meta: stem + "_meta.xml",
+      resource: intent.title || stem
+    };
+  }
+  return null;
+}
+function metaXml(clientName, serverName, resource) {
+  const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  return `<meta>
+    <info author="Grizzly" type="script" name="${esc(resource || "script")}" version="1.0" />
+    <script src="${esc(clientName)}" type="client" cache="false" />
+    <script src="${esc(serverName)}" type="server" />
+</meta>
+`;
+}
 function fileExtOf(nameOrExt) {
   const m = /\.([A-Za-z0-9]+)$/.exec(nameOrExt || "");
   return (m ? m[1] : "txt").toLowerCase();
@@ -30870,7 +30898,7 @@ var require_app = __commonJS({
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "\u041F\u0440\u0438\u043C\u0435\u0440 \u0431\u0430\u043D\u043A\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F Lua: bank \"client\" \u0438\u043B\u0438 bank \"server\". \u0414\u0440\u0443\u0433\u0438\u0435 \u044F\u0437\u044B\u043A\u0438 \u043F\u043E\u043B\u0443\u0447\u0430\u044E\u0442 \u0441\u0432\u043E\u0439 \u0448\u0430\u0431\u043B\u043E\u043D.";
+        modalHint.textContent = "client.lua \u0441\u0440\u0430\u0437\u0443 \u0434\u043E\u0431\u0430\u0432\u0438\u0442 server.lua \u0438 meta.xml. bank \"client\" \u2014 \u0442\u043E \u0436\u0435 \u0434\u043B\u044F \u0431\u0430\u043D\u043A\u0430, \u0442\u043E\u043B\u044C\u043A\u043E Lua.";
         fillModalLang("lua");
         modalInput.value = "untitled.lua";
         $("modal-ok").textContent = "\u0421\u043E\u0437\u0434\u0430\u0442\u044C";
@@ -30913,9 +30941,12 @@ var require_app = __commonJS({
       if (modalMode === "create") {
         const typed = String(modalInput.value || "").trim();
         const L = langById(modalLang.value);
-        const intent = L.ext === "lua" ? parseScriptIntent(typed) : null;
+        const plainClient = L.ext === "lua" && isPlainClientName(typed);
+        let intent = L.ext === "lua" ? parseScriptIntent(typed) : null;
+        if (plainClient) intent = { side: "client", slug: "script", title: "script", topic: "generic" };
         let raw = typed.replace(/[\\/:*?"<>|]/g, "_") || "untitled";
-        if (intent) raw = intent.slug + "_" + intent.side;
+        if (plainClient) raw = "client";
+        else if (intent) raw = intent.slug + "_" + intent.side;
         const name2 = sanitizeName(withExt(raw, L.ext));
         if (!name2) {
           toast("\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u0444\u0430\u0439\u043B\u0430");
@@ -30925,17 +30956,43 @@ var require_app = __commonJS({
           toast("\u0422\u0430\u043A\u043E\u0439 \u0444\u0430\u0439\u043B \u0443\u0436\u0435 \u0435\u0441\u0442\u044C");
           return;
         }
+        const now = Date.now();
         const f = {
           id: newId(),
           name: name2,
           content: starterFor(name2, intent),
-          createdAt: Date.now(),
-          updatedAt: Date.now()
+          createdAt: now,
+          updatedAt: now
         };
         await putFile(f);
+        const added = [];
+        const bundle = clientBundleFor(name2, intent);
+        if (bundle) {
+          if (!(await getByName(bundle.server))) {
+            await putFile({
+              id: newId(),
+              name: bundle.server,
+              content: starterFor(bundle.server, { ...intent, side: "server" }),
+              createdAt: now,
+              updatedAt: now
+            });
+            added.push(bundle.server);
+          }
+          if (!(await getByName(bundle.meta))) {
+            await putFile({
+              id: newId(),
+              name: bundle.meta,
+              content: metaXml(name2, bundle.server, bundle.resource),
+              createdAt: now,
+              updatedAt: now
+            });
+            added.push(bundle.meta);
+          }
+        }
         closeModal();
         await refreshList();
         openFile2(f.id);
+        if (added.length) toast("\u0415\u0449\u0451 " + added.join(" \u0438 "));
         return;
       }
       if (modalMode === "rename") {
