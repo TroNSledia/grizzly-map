@@ -262,7 +262,451 @@ function mdToHtml(md) {
   });
   return s;
 }
-function starterFor(nameOrExt) {
+var RU_SLUG = {
+  а: "a",
+  б: "b",
+  в: "v",
+  г: "g",
+  д: "d",
+  е: "e",
+  ё: "e",
+  ж: "zh",
+  з: "z",
+  и: "i",
+  й: "y",
+  к: "k",
+  л: "l",
+  м: "m",
+  н: "n",
+  о: "o",
+  п: "p",
+  р: "r",
+  с: "s",
+  т: "t",
+  у: "u",
+  ф: "f",
+  х: "h",
+  ц: "ts",
+  ч: "ch",
+  ш: "sh",
+  щ: "sch",
+  ъ: "",
+  ы: "y",
+  ь: "",
+  э: "e",
+  ю: "yu",
+  я: "ya"
+};
+var SIDE_WORD = "client|server|\u043A\u043B\u0438\u0435\u043D\u0442(?:\u0441\u043A\u0430\u044F|\u0441\u043A\u0438\u0439)?|\u0441\u0435\u0440\u0432\u0435\u0440(?:\u043D\u0430\u044F|\u043D\u044B\u0439)?";
+function sideOf(word) {
+  const w = String(word || "").toLowerCase();
+  if (w.startsWith("client") || w.startsWith("\u043A\u043B\u0438\u0435\u043D\u0442")) return "client";
+  if (w.startsWith("server") || w.startsWith("\u0441\u0435\u0440\u0432\u0435\u0440")) return "server";
+  return null;
+}
+function asciiSlug(name) {
+  let s = "";
+  for (const ch of String(name || "").toLowerCase()) {
+    if (RU_SLUG[ch]) s += RU_SLUG[ch];
+    else if (/[a-z0-9]/.test(ch)) s += ch;
+    else s += "_";
+  }
+  s = s.replace(/_+/g, "_").replace(/^_+|_+$/g, "");
+  if (!s) s = "script";
+  if (/^[0-9]/.test(s)) s = "s_" + s;
+  return s.slice(0, 40);
+}
+function luaQuote(value) {
+  return '"' + String(value || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r?\n/g, " ") + '"';
+}
+function parseScriptIntent(raw) {
+  const text = String(raw || "").trim().replace(/\.[A-Za-z0-9]+$/, "");
+  if (!text) return null;
+  const quoted = new RegExp("['\"\\u00AB\\u00BB\\u201C\\u201D\\u201E]\\s*(" + SIDE_WORD + ")\\s*['\"\\u00BB\\u201C\\u201D\\u201E]?", "i").exec(text);
+  const bare = new RegExp("(?:^|[\\s_\\-])(" + SIDE_WORD + ")(?=$|[\\s_\\-])", "i").exec(text);
+  const hit = quoted || bare;
+  if (!hit) return null;
+  const side = sideOf(hit[1]);
+  if (!side) return null;
+  const title = (text.slice(0, hit.index) + " " + text.slice(hit.index + hit[0].length)).replace(/['"\u00AB\u00BB\u201C\u201D\u201E]/g, " ").replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 48);
+  const slug = asciiSlug(title);
+  const topic = scriptTopic(title + " " + text);
+  return {
+    side,
+    slug,
+    title: title || slug,
+    topic
+  };
+}
+function scriptTopic(name) {
+  const n = String(name || "").toLowerCase();
+  if (/bank|\u0431\u0430\u043D\u043A|atm|\u0431\u0430\u043D\u043A\u043E\u043C\u0430\u0442/.test(n)) return "bank";
+  if (/shop|\u043C\u0430\u0433\u0430\u0437|store|\u043B\u0430\u0440\u0451\u043A|\u043B\u0430\u0440\u0435\u043A/.test(n)) return "shop";
+  if (/garage|\u0433\u0430\u0440\u0430\u0436|\u0430\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D|vehicle/.test(n)) return "garage";
+  if (/job|\u0440\u0430\u0431\u043E\u0442|\u0444\u0435\u0440\u043C|\u0448\u0430\u0445\u0442/.test(n)) return "job";
+  if (/house|\u0434\u043E\u043C|\u043A\u0432\u0430\u0440\u0442\u0438\u0440|hotel|\u043E\u0442\u0435\u043B/.test(n)) return "house";
+  return "generic";
+}
+function mtaStarter(intent) {
+  const id = intent.slug;
+  const title = intent.title;
+  const q = luaQuote(title);
+  const other = intent.side === "client" ? "server" : "client";
+  const head = `-- ${title} / ${intent.side}
+-- \u041F\u0440\u0438\u043C\u0435\u0440 ${intent.side === "client" ? "\u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u043E\u0439" : "\u0441\u0435\u0440\u0432\u0435\u0440\u043D\u043E\u0439"} \u0447\u0430\u0441\u0442\u0438 \u0434\u043B\u044F MTA.
+-- \u041F\u0430\u0440\u0430: ${id} "${other}"
+`;
+  if (intent.topic === "bank" && intent.side === "client") {
+    return head + `local POS = { x = 1481.0, y = -1767.0, z = 18.8 }
+local marker
+local window, editAmount
+
+local function closeBank()
+  if isElement(window) then destroyElement(window) end
+  window = nil
+  showCursor(false)
+end
+
+local function sendAmount(eventName)
+  local amount = tonumber(guiGetText(editAmount)) or 0
+  if amount <= 0 then
+    outputChatBox("[" .. ${q} .. "] \u0412\u0432\u0435\u0434\u0438 \u0441\u0443\u043C\u043C\u0443 \u0431\u043E\u043B\u044C\u0448\u0435 0", 255, 90, 90)
+    return
+  end
+  triggerServerEvent(eventName, resourceRoot, math.floor(amount))
+end
+
+local function openBank()
+  if isElement(window) then return end
+  showCursor(true)
+  local sw, sh = guiGetScreenSize()
+  window = guiCreateWindow((sw - 320) / 2, (sh - 210) / 2, 320, 210, ${q}, false)
+  guiCreateLabel(16, 32, 288, 18, "\u0421\u0443\u043C\u043C\u0430", false, window)
+  editAmount = guiCreateEdit(16, 54, 288, 28, "1000", false, window)
+  local deposit = guiCreateButton(16, 98, 140, 34, "\u041F\u043E\u043B\u043E\u0436\u0438\u0442\u044C", false, window)
+  local withdraw = guiCreateButton(164, 98, 140, 34, "\u0421\u043D\u044F\u0442\u044C", false, window)
+  local closeBtn = guiCreateButton(16, 148, 288, 32, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
+  addEventHandler("onClientGUIClick", deposit, function()
+    sendAmount("${id}:deposit")
+  end, false)
+  addEventHandler("onClientGUIClick", withdraw, function()
+    sendAmount("${id}:withdraw")
+  end, false)
+  addEventHandler("onClientGUIClick", closeBtn, function()
+    closeBank()
+  end, false)
+end
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.4, 40, 160, 90, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim or isPedInVehicle(localPlayer) then return end
+    openBank()
+  end)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message)
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+`;
+  }
+  if (intent.topic === "bank" && intent.side === "server") {
+    return head + `local accounts = {}
+
+local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+local function balanceOf(player)
+  return accounts[player] or 0
+end
+
+addEvent("${id}:deposit", true)
+addEventHandler("${id}:deposit", resourceRoot, function(amount)
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  amount = math.floor(tonumber(amount) or 0)
+  if amount <= 0 then return reply(player, false, "\u0421\u0443\u043C\u043C\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 0") end
+  if getPlayerMoney(player) < amount then return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043D\u0430\u043B\u0438\u0447\u043D\u044B\u0445") end
+  takePlayerMoney(player, amount)
+  accounts[player] = balanceOf(player) + amount
+  reply(player, true, ("\u041D\u0430 \u0441\u0447\u0451\u0442\u0435: $%d"):format(accounts[player]))
+end)
+
+addEvent("${id}:withdraw", true)
+addEventHandler("${id}:withdraw", resourceRoot, function(amount)
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  amount = math.floor(tonumber(amount) or 0)
+  if amount <= 0 then return reply(player, false, "\u0421\u0443\u043C\u043C\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 0") end
+  if balanceOf(player) < amount then return reply(player, false, "\u041D\u0430 \u0441\u0447\u0451\u0442\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E") end
+  accounts[player] = balanceOf(player) - amount
+  givePlayerMoney(player, amount)
+  reply(player, true, ("\u041D\u0430 \u0441\u0447\u0451\u0442\u0435: $%d"):format(accounts[player]))
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  accounts[source] = nil
+end)
+`;
+  }
+  if (intent.topic === "shop" && intent.side === "client") {
+    return head + `local POS = { x = 1832.0, y = -1842.0, z = 13.6 }
+local marker, window
+
+local function closeShop()
+  if isElement(window) then destroyElement(window) end
+  window = nil
+  showCursor(false)
+end
+
+local function openShop()
+  if isElement(window) then return end
+  showCursor(true)
+  local sw, sh = guiGetScreenSize()
+  window = guiCreateWindow((sw - 300) / 2, (sh - 170) / 2, 300, 170, ${q}, false)
+  guiCreateLabel(16, 36, 268, 36, "\u0412\u043E\u0434\u0430 \xB7 $50", false, window)
+  local buy = guiCreateButton(16, 80, 268, 32, "\u041A\u0443\u043F\u0438\u0442\u044C", false, window)
+  local closeBtn = guiCreateButton(16, 120, 268, 28, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
+  addEventHandler("onClientGUIClick", buy, function()
+    triggerServerEvent("${id}:buy", resourceRoot, "water", 1)
+  end, false)
+  addEventHandler("onClientGUIClick", closeBtn, function()
+    closeShop()
+  end, false)
+end
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.4, 232, 145, 48, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim then return end
+    openShop()
+  end)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message)
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+`;
+  }
+  if (intent.topic === "shop" && intent.side === "server") {
+    return head + `local PRICE = { water = 50 }
+
+local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+addEvent("${id}:buy", true)
+addEventHandler("${id}:buy", resourceRoot, function(itemId, count)
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  local price = PRICE[itemId]
+  count = math.floor(tonumber(count) or 0)
+  if not price or count <= 0 then return reply(player, false, "\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0433\u043E \u0442\u043E\u0432\u0430\u0440\u0430") end
+  local total = price * count
+  if getPlayerMoney(player) < total then return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0434\u0435\u043D\u0435\u0433") end
+  takePlayerMoney(player, total)
+  reply(player, true, ("\u041A\u0443\u043F\u043B\u0435\u043D\u043E: %s x%d"):format(itemId, count))
+end)
+`;
+  }
+  if (intent.topic === "garage" && intent.side === "client") {
+    return head + `local POS = { x = 1642.0, y = -1520.0, z = 13.5 }
+local marker
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 2, 80, 140, 220, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim then return end
+    triggerServerEvent("${id}:spawn", resourceRoot)
+  end)
+  outputChatBox("[" .. ${q} .. "] \u0437\u0430\u0439\u0434\u0438 \u0432 \u043C\u0430\u0440\u043A\u0435\u0440, \u0447\u0442\u043E\u0431\u044B \u0432\u044B\u0434\u0430\u0442\u044C \u043C\u0430\u0448\u0438\u043D\u0443", 180, 200, 255)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message)
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+`;
+  }
+  if (intent.topic === "garage" && intent.side === "server") {
+    return head + `local vehicles = {}
+
+local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+addEvent("${id}:spawn", true)
+addEventHandler("${id}:spawn", resourceRoot, function()
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  if isElement(vehicles[player]) then destroyElement(vehicles[player]) end
+  local x, y, z = getElementPosition(player)
+  local _, _, rot = getElementRotation(player)
+  local veh = createVehicle(411, x + 2, y, z + 0.4, 0, 0, rot)
+  vehicles[player] = veh
+  warpPedIntoVehicle(player, veh)
+  reply(player, true, "\u041C\u0430\u0448\u0438\u043D\u0430 \u0432\u044B\u0434\u0430\u043D\u0430")
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  if isElement(vehicles[source]) then destroyElement(vehicles[source]) end
+  vehicles[source] = nil
+end)
+`;
+  }
+  if (intent.topic === "job" && intent.side === "client") {
+    return head + `local POS = { x = -382.0, y = -1438.0, z = 26.0 }
+local marker
+local onJob = false
+
+local function toggleJob()
+  onJob = not onJob
+  triggerServerEvent("${id}:toggle", resourceRoot, onJob)
+end
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.5, 230, 180, 40, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim then return end
+    toggleJob()
+  end)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message, active)
+  onJob = active and true or false
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+`;
+  }
+  if (intent.topic === "job" && intent.side === "server") {
+    return head + `local workers = {}
+
+local function reply(player, ok, message, active)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message, active)
+end
+
+addEvent("${id}:toggle", true)
+addEventHandler("${id}:toggle", resourceRoot, function(want)
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  local active = want and true or false
+  workers[player] = active or nil
+  reply(player, true, active and "\u0421\u043C\u0435\u043D\u0430 \u043D\u0430\u0447\u0430\u043B\u0430\u0441\u044C" or "\u0421\u043C\u0435\u043D\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0435\u043D\u0430", active)
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  workers[source] = nil
+end)
+`;
+  }
+  if (intent.topic === "house" && intent.side === "client") {
+    return head + `local POS = { x = 2495.0, y = -1690.0, z = 14.8 }
+local marker
+local inside = false
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.2, 180, 120, 220, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim then return end
+    triggerServerEvent("${id}:enter", resourceRoot)
+  end)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message, nowInside)
+  inside = nowInside and true or false
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+
+bindKey("f", "down", function()
+  if not inside then return end
+  triggerServerEvent("${id}:leave", resourceRoot)
+end)
+`;
+  }
+  if (intent.topic === "house" && intent.side === "server") {
+    return head + `local INSIDE = { x = 2233.6, y = -1114.5, z = 1050.9, int = 5, dim = 10 }
+local outside = {}
+
+local function reply(player, ok, message, nowInside)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message, nowInside)
+end
+
+addEvent("${id}:enter", true)
+addEventHandler("${id}:enter", resourceRoot, function()
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  local x, y, z = getElementPosition(player)
+  outside[player] = { x = x, y = y, z = z, int = getElementInterior(player), dim = getElementDimension(player) }
+  setElementInterior(player, INSIDE.int)
+  setElementDimension(player, INSIDE.dim)
+  setElementPosition(player, INSIDE.x, INSIDE.y, INSIDE.z)
+  reply(player, true, "\u0422\u044B \u0432\u043D\u0443\u0442\u0440\u0438. F \u2014 \u0432\u044B\u0439\u0442\u0438", true)
+end)
+
+addEvent("${id}:leave", true)
+addEventHandler("${id}:leave", resourceRoot, function()
+  local player = client
+  if not isElement(player) or not outside[player] then return end
+  local back = outside[player]
+  setElementInterior(player, back.int)
+  setElementDimension(player, back.dim)
+  setElementPosition(player, back.x, back.y, back.z)
+  outside[player] = nil
+  reply(player, true, "\u0422\u044B \u0441\u043D\u0430\u0440\u0443\u0436\u0438", false)
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  outside[source] = nil
+end)
+`;
+  }
+  if (intent.side === "client") {
+    return head + `local POS = { x = 1481.0, y = -1767.0, z = 18.8 }
+local marker
+
+local function askServer()
+  triggerServerEvent("${id}:request", resourceRoot)
+end
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.5, 232, 145, 48, 140)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim or isPedInVehicle(localPlayer) then return end
+    askServer()
+  end)
+  outputChatBox("[" .. ${q} .. "] \u043A\u043B\u0438\u0435\u043D\u0442 \u0437\u0430\u043F\u0443\u0449\u0435\u043D", 232, 145, 48)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message)
+  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end)
+`;
+  }
+  return head + `local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+addEvent("${id}:request", true)
+addEventHandler("${id}:request", resourceRoot, function()
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return end
+  local name = getPlayerName(player) or "player"
+  reply(player, true, "\u0421\u0435\u0440\u0432\u0435\u0440 \u043F\u0440\u0438\u043D\u044F\u043B \u0437\u0430\u043F\u0440\u043E\u0441 \u043E\u0442 " .. name)
+end)
+
+addEventHandler("onResourceStart", resourceRoot, function()
+  outputServerLog("[" .. ${q} .. "] \u0441\u0435\u0440\u0432\u0435\u0440 \u0437\u0430\u043F\u0443\u0449\u0435\u043D")
+end)
+`;
+}
+function starterFor(nameOrExt, intent) {
+  if (intent && intent.side) return mtaStarter(intent);
   const e = (/\.([A-Za-z0-9]+)$/.exec(nameOrExt || "") || [null, nameOrExt || "txt"])[1].toLowerCase();
   const name2 = nameOrExt.includes(".") ? nameOrExt : `untitled.${e}`;
   if (e === "lua") return `-- ${name2}
@@ -30304,7 +30748,7 @@ var require_app = __commonJS({
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "\u042F\u0437\u044B\u043A \u0437\u0430\u0434\u0430\u0451\u0442 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435: .lua .js .css \u2026";
+        modalHint.textContent = "bank \"client\" \u0438\u043B\u0438 bank \"server\" \u2014 \u043F\u0440\u0438\u043C\u0435\u0440 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u0438\u043B\u0438 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u0418\u043D\u0430\u0447\u0435 \u044F\u0437\u044B\u043A \u0437\u0430\u0434\u0430\u0451\u0442 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435.";
         fillModalLang("lua");
         modalInput.value = "untitled.lua";
         $("modal-ok").textContent = "\u0421\u043E\u0437\u0434\u0430\u0442\u044C";
@@ -30345,8 +30789,11 @@ var require_app = __commonJS({
         return;
       }
       if (modalMode === "create") {
-        const L = langById(modalLang.value);
-        let raw = String(modalInput.value || "untitled").trim().replace(/[\\/:*?"<>|]/g, "_") || "untitled";
+        const typed = String(modalInput.value || "").trim();
+        const intent = parseScriptIntent(typed);
+        const L = langById(intent ? "lua" : modalLang.value);
+        let raw = typed.replace(/[\\/:*?"<>|]/g, "_") || "untitled";
+        if (intent) raw = intent.slug + "_" + intent.side;
         const name2 = sanitizeName(withExt(raw, L.ext));
         if (!name2) {
           toast("\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u0444\u0430\u0439\u043B\u0430");
@@ -30359,7 +30806,7 @@ var require_app = __commonJS({
         const f = {
           id: newId(),
           name: name2,
-          content: starterFor(name2),
+          content: starterFor(name2, intent),
           createdAt: Date.now(),
           updatedAt: Date.now()
         };
