@@ -358,96 +358,210 @@ function mtaStarter(intent) {
 `;
   if (intent.topic === "bank" && intent.side === "client") {
     return head + `local POS = { x = 1481.0, y = -1767.0, z = 18.8 }
-local marker
-local window, editAmount
+local MAX_AMOUNT = 100000000
+local marker, blip
+local window, editAmount, labelStatus
+local busy = false
+
+local function say(text, ok)
+  outputChatBox("[" .. ${q} .. "] " .. tostring(text or ""), ok and 90 or 255, ok and 200 or 90, 90)
+end
+
+local function setStatus(text)
+  if isElement(labelStatus) then guiSetText(labelStatus, text) end
+end
 
 local function closeBank()
   if isElement(window) then destroyElement(window) end
-  window = nil
+  window, editAmount, labelStatus = nil, nil, nil
   showCursor(false)
+  guiSetInputEnabled(false)
+  busy = false
 end
 
-local function sendAmount(eventName)
-  local amount = tonumber(guiGetText(editAmount)) or 0
-  if amount <= 0 then
-    outputChatBox("[" .. ${q} .. "] \u0412\u0432\u0435\u0434\u0438 \u0441\u0443\u043C\u043C\u0443 \u0431\u043E\u043B\u044C\u0448\u0435 0", 255, 90, 90)
+local function sendAmount(eventName, takeAll)
+  if busy or not isElement(editAmount) then return end
+  local amount = takeAll and -1 or math.floor(tonumber(guiGetText(editAmount)) or 0)
+  if not takeAll and (amount <= 0 or amount > MAX_AMOUNT) then
+    setStatus("\u0412\u0432\u0435\u0434\u0438 \u0441\u0443\u043C\u043C\u0443 \u043E\u0442 1 \u0434\u043E " .. MAX_AMOUNT)
     return
   end
-  triggerServerEvent(eventName, resourceRoot, math.floor(amount))
+  busy = true
+  setStatus("\u0417\u0430\u043F\u0440\u043E\u0441 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u2026")
+  triggerServerEvent(eventName, resourceRoot, amount)
 end
 
 local function openBank()
-  if isElement(window) then return end
+  if isElement(window) or isPedInVehicle(localPlayer) or isPedDead(localPlayer) then return end
   showCursor(true)
+  guiSetInputEnabled(true)
   local sw, sh = guiGetScreenSize()
-  window = guiCreateWindow((sw - 320) / 2, (sh - 210) / 2, 320, 210, ${q}, false)
-  guiCreateLabel(16, 32, 288, 18, "\u0421\u0443\u043C\u043C\u0430", false, window)
-  editAmount = guiCreateEdit(16, 54, 288, 28, "1000", false, window)
-  local deposit = guiCreateButton(16, 98, 140, 34, "\u041F\u043E\u043B\u043E\u0436\u0438\u0442\u044C", false, window)
-  local withdraw = guiCreateButton(164, 98, 140, 34, "\u0421\u043D\u044F\u0442\u044C", false, window)
-  local closeBtn = guiCreateButton(16, 148, 288, 32, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
-  addEventHandler("onClientGUIClick", deposit, function()
-    sendAmount("${id}:deposit")
-  end, false)
-  addEventHandler("onClientGUIClick", withdraw, function()
-    sendAmount("${id}:withdraw")
-  end, false)
-  addEventHandler("onClientGUIClick", closeBtn, function()
-    closeBank()
-  end, false)
+  window = guiCreateWindow((sw - 360) / 2, (sh - 280) / 2, 360, 280, ${q}, false)
+  guiWindowSetSizable(window, false)
+  labelStatus = guiCreateLabel(18, 32, 324, 40, "\u0421\u0447\u0451\u0442: \u0437\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026", false, window)
+  guiLabelSetHorizontalAlign(labelStatus, "left", true)
+  guiCreateLabel(18, 78, 324, 18, "\u0421\u0443\u043C\u043C\u0430", false, window)
+  editAmount = guiCreateEdit(18, 98, 324, 30, "1000", false, window)
+  local deposit = guiCreateButton(18, 142, 156, 32, "\u041F\u043E\u043B\u043E\u0436\u0438\u0442\u044C", false, window)
+  local withdraw = guiCreateButton(186, 142, 156, 32, "\u0421\u043D\u044F\u0442\u044C", false, window)
+  local depositAll = guiCreateButton(18, 180, 156, 32, "\u041F\u043E\u043B\u043E\u0436\u0438\u0442\u044C \u0432\u0441\u0451", false, window)
+  local withdrawAll = guiCreateButton(186, 180, 156, 32, "\u0421\u043D\u044F\u0442\u044C \u0432\u0441\u0451", false, window)
+  local closeBtn = guiCreateButton(18, 224, 324, 32, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
+  addEventHandler("onClientGUIClick", deposit, function() sendAmount("${id}:deposit", false) end, false)
+  addEventHandler("onClientGUIClick", withdraw, function() sendAmount("${id}:withdraw", false) end, false)
+  addEventHandler("onClientGUIClick", depositAll, function() sendAmount("${id}:deposit", true) end, false)
+  addEventHandler("onClientGUIClick", withdrawAll, function() sendAmount("${id}:withdraw", true) end, false)
+  addEventHandler("onClientGUIClick", closeBtn, function() closeBank() end, false)
+  triggerServerEvent("${id}:balance", resourceRoot)
+end
+
+local function nearMarker()
+  if not isElement(marker) then return false end
+  local px, py, pz = getElementPosition(localPlayer)
+  local mx, my, mz = getElementPosition(marker)
+  return getDistanceBetweenPoints3D(px, py, pz, mx, my, mz) <= 8
 end
 
 addEventHandler("onClientResourceStart", resourceRoot, function()
-  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.4, 40, 160, 90, 140)
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.5, 40, 160, 90, 150)
+  blip = createBlip(POS.x, POS.y, POS.z, 52, 2, 40, 180, 90, 255, 0, 300)
   addEventHandler("onClientMarkerHit", marker, function(hit, dim)
-    if hit ~= localPlayer or not dim or isPedInVehicle(localPlayer) then return end
+    if hit ~= localPlayer or not dim then return end
     openBank()
+  end)
+  addEventHandler("onClientMarkerLeave", marker, function(hit, dim)
+    if hit == localPlayer and dim then closeBank() end
   end)
 end)
 
+addEventHandler("onClientRender", root, function()
+  if not nearMarker() or isElement(window) then return end
+  local mx, my, mz = getElementPosition(marker)
+  local sx, sy = getScreenFromWorldPosition(mx, my, mz + 1.1)
+  if not sx then return end
+  dxDrawText(${q} .. "\\n\u0432\u043E\u0439\u0434\u0438 \u0432 \u043C\u0430\u0440\u043A\u0435\u0440", sx - 90, sy, sx + 90, sy + 36, tocolor(255, 255, 255, 230), 1, "default-bold", "center")
+end)
+
+addEventHandler("onClientResourceStop", resourceRoot, function()
+  closeBank()
+  if isElement(marker) then destroyElement(marker) end
+  if isElement(blip) then destroyElement(blip) end
+end)
+
+bindKey("backspace", "down", function()
+  if isElement(window) then closeBank() end
+end)
+
 addEvent("${id}:result", true)
-addEventHandler("${id}:result", resourceRoot, function(ok, message)
-  outputChatBox("[" .. ${q} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+addEventHandler("${id}:result", resourceRoot, function(ok, message, balance, cash)
+  busy = false
+  local line = tostring(message or "")
+  if tonumber(balance) and tonumber(cash) then
+    line = ("\u0421\u0447\u0451\u0442: $%d\\n\u041D\u0430\u043B\u0438\u0447\u043D\u044B\u0435: $%d"):format(balance, cash)
+    if message and message ~= "" then say(message, ok) end
+  end
+  setStatus(line)
 end)
 `;
   }
   if (intent.topic === "bank" && intent.side === "server") {
-    return head + `local accounts = {}
+    return head + `local POS = { x = 1481.0, y = -1767.0, z = 18.8 }
+local RANGE = 6
+local MAX_AMOUNT = 100000000
+local DATA_KEY = "${id}.balance"
+local guests = {}
 
-local function reply(player, ok, message)
-  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+local function storage(player)
+  local account = getPlayerAccount(player)
+  if account and not isGuestAccount(account) then return account end
+  return nil
 end
 
 local function balanceOf(player)
-  return accounts[player] or 0
+  local account = storage(player)
+  if account then return math.floor(tonumber(getAccountData(account, DATA_KEY)) or 0) end
+  return math.floor(guests[getPlayerSerial(player)] or 0)
 end
 
-addEvent("${id}:deposit", true)
-addEventHandler("${id}:deposit", resourceRoot, function(amount)
+local function setBalance(player, value)
+  value = math.max(0, math.floor(value))
+  local account = storage(player)
+  if account then
+    setAccountData(account, DATA_KEY, value)
+  else
+    guests[getPlayerSerial(player)] = value
+  end
+  return value
+end
+
+local function nearBank(player)
+  local x, y, z = getElementPosition(player)
+  return getDistanceBetweenPoints3D(x, y, z, POS.x, POS.y, POS.z) <= RANGE
+end
+
+local function reply(player, ok, message, balance)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message, balance or balanceOf(player), getPlayerMoney(player) or 0)
+end
+
+local function playerOf()
   local player = client
-  if not isElement(player) or getElementType(player) ~= "player" then return end
-  amount = math.floor(tonumber(amount) or 0)
-  if amount <= 0 then return reply(player, false, "\u0421\u0443\u043C\u043C\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 0") end
-  if getPlayerMoney(player) < amount then return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043D\u0430\u043B\u0438\u0447\u043D\u044B\u0445") end
+  if not isElement(player) or getElementType(player) ~= "player" then return nil end
+  if isPedDead(player) then return nil end
+  if not nearBank(player) then
+    reply(player, false, "\u041F\u043E\u0434\u043E\u0439\u0434\u0438 \u043A \u0431\u0430\u043D\u043A\u0443")
+    return nil
+  end
+  return player
+end
+
+local function amountOf(player, raw, cashOut)
+  local amount = math.floor(tonumber(raw) or 0)
+  if amount == -1 then
+    amount = cashOut and balanceOf(player) or (getPlayerMoney(player) or 0)
+  end
+  if amount <= 0 or amount > MAX_AMOUNT then return nil end
+  return amount
+end
+
+addEvent("${id}:balance", true)
+addEventHandler("${id}:balance", resourceRoot, function()
+  local player = playerOf()
+  if not player then return end
+  reply(player, true, "")
+end)
+
+addEvent("${id}:deposit", true)
+addEventHandler("${id}:deposit", resourceRoot, function(raw)
+  local player = playerOf()
+  if not player then return end
+  local amount = amountOf(player, raw, false)
+  if not amount then return reply(player, false, "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u0430\u044F \u0441\u0443\u043C\u043C\u0430") end
+  if (getPlayerMoney(player) or 0) < amount then return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u043D\u0430\u043B\u0438\u0447\u043D\u044B\u0445") end
   takePlayerMoney(player, amount)
-  accounts[player] = balanceOf(player) + amount
-  reply(player, true, ("\u041D\u0430 \u0441\u0447\u0451\u0442\u0435: $%d"):format(accounts[player]))
+  local nextBalance = setBalance(player, balanceOf(player) + amount)
+  reply(player, true, ("\u041F\u043E\u043B\u043E\u0436\u0435\u043D\u043E $%d"):format(amount), nextBalance)
 end)
 
 addEvent("${id}:withdraw", true)
-addEventHandler("${id}:withdraw", resourceRoot, function(amount)
-  local player = client
-  if not isElement(player) or getElementType(player) ~= "player" then return end
-  amount = math.floor(tonumber(amount) or 0)
-  if amount <= 0 then return reply(player, false, "\u0421\u0443\u043C\u043C\u0430 \u0434\u043E\u043B\u0436\u043D\u0430 \u0431\u044B\u0442\u044C \u0431\u043E\u043B\u044C\u0448\u0435 0") end
+addEventHandler("${id}:withdraw", resourceRoot, function(raw)
+  local player = playerOf()
+  if not player then return end
+  local amount = amountOf(player, raw, true)
+  if not amount then return reply(player, false, "\u041D\u0435\u043A\u043E\u0440\u0440\u0435\u043A\u0442\u043D\u0430\u044F \u0441\u0443\u043C\u043C\u0430") end
   if balanceOf(player) < amount then return reply(player, false, "\u041D\u0430 \u0441\u0447\u0451\u0442\u0435 \u043D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E") end
-  accounts[player] = balanceOf(player) - amount
+  local nextBalance = setBalance(player, balanceOf(player) - amount)
   givePlayerMoney(player, amount)
-  reply(player, true, ("\u041D\u0430 \u0441\u0447\u0451\u0442\u0435: $%d"):format(accounts[player]))
+  reply(player, true, ("\u0421\u043D\u044F\u0442\u043E $%d"):format(amount), nextBalance)
 end)
 
 addEventHandler("onPlayerQuit", root, function()
-  accounts[source] = nil
+  local account = getPlayerAccount(source)
+  if not account or isGuestAccount(account) then return end
+  guests[getPlayerSerial(source)] = nil
+end)
+
+addEventHandler("onResourceStart", resourceRoot, function()
+  outputServerLog("[" .. ${q} .. "] \u0441\u0447\u0435\u0442\u0430 \u0433\u043E\u0442\u043E\u0432\u044B")
 end)
 `;
   }

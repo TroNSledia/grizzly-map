@@ -1,5 +1,5 @@
 ﻿/* Service worker: полный офлайн после первого визита (бандл без CDN для редактора) */
-const CACHE = "grizzly-edit-pages-v8";
+const CACHE = "grizzly-edit-pages-v9";
 const SHELL = [
   "./",
   "./index.html",
