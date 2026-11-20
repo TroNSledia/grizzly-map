@@ -31446,9 +31446,12 @@ var require_app = __commonJS({
           if (Date.now() - lastEnter < 700) return tr;
           let spurious = false;
           tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-            if (fromA !== toA) return;
             const text = inserted.toString();
-            if (text === "\n" || text === "\n " || text === "\r\n") spurious = true;
+            if (!text.includes("\n")) return;
+            const deleted = tr.startState.doc.sliceString(fromA, toA);
+            const flat = text.replace(/\r?\n/g, "");
+            const sameWords = deleted.replace(/[ \t]/g, "") === flat.replace(/[ \t]/g, "");
+            if (sameWords && (deleted.trim() === "" || flat === deleted || text.includes("\n"))) spurious = true;
           });
           return spurious ? [] : tr;
         }),
@@ -31547,6 +31550,9 @@ var require_app = __commonJS({
       toast("." + L.ext);
       refreshList();
     }
+    function repairPhoneBreaks(text) {
+      return String(text || "").replace(/([^\n])\n([ \t]*)(<=|>=|==|~=|,)/g, "$1 $3");
+    }
     async function openFile2(id2) {
       const f = await getFile(id2);
       if (!f) return toast("\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D");
@@ -31555,7 +31561,12 @@ var require_app = __commonJS({
       titleEdit.textContent = f.name;
       const openedIntent = intentFromName(f.name);
       const expected = starterFor(f.name, openedIntent);
-      let opened = f.content || "";
+      let opened = repairPhoneBreaks(f.content || "");
+      if (opened !== (f.content || "")) {
+        f.content = opened;
+        f.updatedAt = Date.now();
+        putFile(f);
+      }
       if (expected && isStockTemplate(opened) && !sameDoc(opened, expected)) {
         opened = expected;
         f.content = opened;
@@ -31920,7 +31931,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=19", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=20", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
