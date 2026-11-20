@@ -1,0 +1,19 @@
+{
+  "name": "Grizzly Edit",
+  "short_name": "Grizzly Edit",
+  "description": "Мини-редактор кода для Android: правь и сохраняй файлы офлайн",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#121416",
+  "theme_color": "#121416",
+  "lang": "ru",
+  "id": "./",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

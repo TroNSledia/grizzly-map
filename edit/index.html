@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#121416" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Grizzly Edit</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <section class="view active" id="view-list">
+    <header class="app-bar" id="bar-list">
+      <div class="brand-mark">&lt;/&gt;</div>
+      <h1>Grizzly Edit</h1>
+    </header>
+    <div class="install-banner" id="install-banner">
+      <p><strong>На экран «Домой»</strong> — редактор как приложение, работает без ноутбука.</p>
+      <button type="button" class="primary" id="btn-install">Установить</button>
+      <button type="button" class="ghost" id="btn-install-dismiss">✕</button>
+    </div>
+    <div class="empty" id="empty">
+      <strong>Пока пусто</strong>
+      Создай файл или импортируй с телефона
+    </div>
+    <ul class="file-list" id="file-list"></ul>
+    <div class="dock">
+      <button type="button" id="btn-import">Импорт</button>
+      <button type="button" class="primary" id="btn-new">＋ Новый</button>
+    </div>
+  </section>
+
+  <section class="view" id="view-edit">
+    <header class="app-bar">
+      <button type="button" class="ghost" id="btn-back" aria-label="Назад">←</button>
+      <h1 id="title-edit">file</h1>
+    </header>
+    <div class="lang-tabs" id="lang-tabs" role="tablist" aria-label="Язык"></div>
+    <div id="editor-host"></div>
+    <div class="out-panel" id="out-panel">
+      <div class="out-head">
+        <strong>Вывод</strong>
+        <button type="button" class="ghost" id="btn-out-clear" title="Очистить">Очистить</button>
+        <button type="button" class="ghost" id="btn-out-close" title="Скрыть">✕</button>
+      </div>
+      <pre class="out-body" id="out-body"></pre>
+      <iframe class="out-preview" id="out-preview" title="Превью" sandbox="allow-scripts allow-same-origin"></iframe>
+    </div>
+    <div class="editor-dock">
+      <button type="button" class="run" id="btn-run" title="Запустить (Ctrl+Enter)" disabled>▶</button>
+      <span class="status" id="status">Готово</span>
+      <button type="button" id="btn-export">Экспорт</button>
+      <button type="button" class="primary" id="btn-save">Сохранить</button>
+    </div>
+  </section>
+
+  <div class="modal-backdrop" id="modal">
+    <div class="modal" role="dialog" aria-modal="true">
+      <h2 id="modal-title">Файл</h2>
+      <p class="hint" id="modal-hint"></p>
+      <select id="modal-lang" aria-label="Язык"></select>
+      <input id="modal-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+      <div class="row">
+        <button type="button" id="modal-cancel">Отмена</button>
+        <button type="button" class="primary" id="modal-ok">ОК</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <input id="file-input" type="file" multiple hidden accept=".lua,.js,.ts,.tsx,.jsx,.mjs,.cjs,.py,.css,.html,.htm,.json,.md,.txt,.xml,.sql,.sh" />
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
