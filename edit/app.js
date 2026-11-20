@@ -705,10 +705,14 @@ addEventHandler("onResourceStart", resourceRoot, function()
 end)
 `;
 }
+function fileExtOf(nameOrExt) {
+  const m = /\.([A-Za-z0-9]+)$/.exec(nameOrExt || "");
+  return (m ? m[1] : "txt").toLowerCase();
+}
 function starterFor(nameOrExt, intent) {
-  if (intent && intent.side) return mtaStarter(intent);
-  const e = (/\.([A-Za-z0-9]+)$/.exec(nameOrExt || "") || [null, nameOrExt || "txt"])[1].toLowerCase();
+  const e = fileExtOf(nameOrExt);
   const name2 = nameOrExt.includes(".") ? nameOrExt : `untitled.${e}`;
+  if (intent && intent.side && e === "lua") return mtaStarter(intent);
   if (e === "lua") return `-- ${name2}
 local function main()
   print("hello")
@@ -30666,7 +30670,11 @@ var require_app = __commonJS({
         syncLangTabs();
         return;
       }
-      const content2 = view.state.doc.toString();
+      const prevContent = view.state.doc.toString();
+      const prevIntent = fileExtOf(current.name) === "lua" ? parseScriptIntent(current.name) : null;
+      const untouched = prevContent.replace(/\s+$/, "") === starterFor(current.name, prevIntent).replace(/\s+$/, "");
+      const nextIntent = L.ext === "lua" ? parseScriptIntent(newName) || prevIntent : null;
+      const content2 = untouched ? starterFor(newName, nextIntent) : prevContent;
       current.name = newName;
       current.content = content2;
       current.updatedAt = Date.now();
@@ -30748,7 +30756,7 @@ var require_app = __commonJS({
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "bank \"client\" \u0438\u043B\u0438 bank \"server\" \u2014 \u043F\u0440\u0438\u043C\u0435\u0440 \u043A\u043B\u0438\u0435\u043D\u0442\u0430 \u0438\u043B\u0438 \u0441\u0435\u0440\u0432\u0435\u0440\u0430. \u0418\u043D\u0430\u0447\u0435 \u044F\u0437\u044B\u043A \u0437\u0430\u0434\u0430\u0451\u0442 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435.";
+        modalHint.textContent = "\u041F\u0440\u0438\u043C\u0435\u0440 \u0431\u0430\u043D\u043A\u0430 \u0442\u043E\u043B\u044C\u043A\u043E \u0434\u043B\u044F Lua: bank \"client\" \u0438\u043B\u0438 bank \"server\". \u0414\u0440\u0443\u0433\u0438\u0435 \u044F\u0437\u044B\u043A\u0438 \u043F\u043E\u043B\u0443\u0447\u0430\u044E\u0442 \u0441\u0432\u043E\u0439 \u0448\u0430\u0431\u043B\u043E\u043D.";
         fillModalLang("lua");
         modalInput.value = "untitled.lua";
         $("modal-ok").textContent = "\u0421\u043E\u0437\u0434\u0430\u0442\u044C";
@@ -30790,8 +30798,8 @@ var require_app = __commonJS({
       }
       if (modalMode === "create") {
         const typed = String(modalInput.value || "").trim();
-        const intent = parseScriptIntent(typed);
-        const L = langById(intent ? "lua" : modalLang.value);
+        const L = langById(modalLang.value);
+        const intent = L.ext === "lua" ? parseScriptIntent(typed) : null;
         let raw = typed.replace(/[\\/:*?"<>|]/g, "_") || "untitled";
         if (intent) raw = intent.slug + "_" + intent.side;
         const name2 = sanitizeName(withExt(raw, L.ext));
