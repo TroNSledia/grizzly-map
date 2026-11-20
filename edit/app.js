@@ -375,9 +375,33 @@ function initTelegram() {
   }
   return tg;
 }
+function getEditToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function getEditWho() {
+  try {
+    return localStorage.getItem(WHO_KEY) || "";
+  } catch {
+    return "";
+  }
+}
+function setEditSession(token, who) {
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token);
+    else localStorage.removeItem(TOKEN_KEY);
+    if (who) localStorage.setItem(WHO_KEY, who);
+    else localStorage.removeItem(WHO_KEY);
+  } catch (_) {
+  }
+}
 function hasHostAuth() {
   const tg = telegram();
-  return !!(tg && tg.initData);
+  if (tg && tg.initData) return true;
+  return !!getEditToken();
 }
 function parts(t2) {
   const a = [];
@@ -387,13 +411,19 @@ function parts(t2) {
 }
 async function call(req) {
   const tg = telegram();
+  const editToken = getEditToken();
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 25e3);
   try {
+    const payload = {
+      initData: tg && tg.initData ? tg.initData : "",
+      editToken: editToken || void 0,
+      req
+    };
     const r = await fetch(apiBase(), {
       method: "POST",
       headers: { "content-type": "text/plain" },
-      body: JSON.stringify({ initData: tg ? tg.initData : "", req }),
+      body: JSON.stringify(payload),
       signal: ac.signal
     });
     const txt = await r.text();
@@ -416,6 +446,19 @@ async function call(req) {
   } finally {
     clearTimeout(timer);
   }
+}
+async function loginWithCode(code2) {
+  const d = await call({ a: "ed_login", code: String(code2 || "").trim() });
+  if (d && d.ok && d.token) {
+    setEditSession(d.token, d.who || "");
+  }
+  return d;
+}
+async function logout() {
+  const token = getEditToken();
+  if (token) await call({ a: "ed_logout", editToken: token, token });
+  setEditSession("", "");
+  return { ok: true };
 }
 async function listResources() {
   return call({ a: "ed_res" });
@@ -443,10 +486,12 @@ function haptic(ok) {
   } catch (_) {
   }
 }
-var DEFAULT_API;
+var DEFAULT_API, TOKEN_KEY, WHO_KEY;
 var init_host = __esm({
   "host.js"() {
     DEFAULT_API = "https://grizzly.kuzea1945.workers.dev";
+    TOKEN_KEY = "grizzly-edit-token";
+    WHO_KEY = "grizzly-edit-who";
   }
 });
 
@@ -30110,6 +30155,11 @@ var require_app = __commonJS({
     var hostBar = $("host-bar");
     var hostRes = $("host-res");
     var hostFile = $("host-file");
+    var hostLogin = $("host-login");
+    var hostWho = $("host-who");
+    var hostWhoLabel = $("host-who-label");
+    var hostCode = $("host-code");
+    var hostLoginErr = $("host-login-err");
     var dockLocal = $("dock-local");
     var dockHost = $("dock-host");
     var modeTabs = $("mode-tabs");
@@ -30449,23 +30499,75 @@ var require_app = __commonJS({
         );
       };
     }
+    function updateHostSessionUI() {
+      const authed = hasHostAuth();
+      const who = getEditWho();
+      const tg = telegram();
+      hostLogin.hidden = !listMode || listMode !== "host" || authed;
+      hostWho.hidden = !(listMode === "host" && authed);
+      hostBar.hidden = !(listMode === "host" && authed);
+      dockHost.hidden = !(listMode === "host" && authed);
+      if (authed) {
+        const via = tg && tg.initData ? "Telegram" : "\u043A\u043E\u0434 /editkey";
+        hostWhoLabel.textContent = (who ? who + " \xB7 " : "") + via;
+      }
+      if (hostLoginErr) {
+        hostLoginErr.hidden = true;
+        hostLoginErr.textContent = "";
+      }
+    }
+    async function doHostLogin() {
+      const code2 = String(hostCode.value || "").trim();
+      if (!code2) {
+        hostLoginErr.hidden = false;
+        hostLoginErr.textContent = "\u0412\u0432\u0435\u0434\u0438 \u043A\u043E\u0434 \u0438\u0437 \u0438\u0433\u0440\u044B (/editkey)";
+        return;
+      }
+      hostLoginErr.hidden = true;
+      $("btn-host-login").disabled = true;
+      $("btn-host-login").textContent = "\u2026";
+      try {
+        const d = await loginWithCode(code2);
+        if (!d || !d.ok) {
+          hostLoginErr.hidden = false;
+          hostLoginErr.textContent = d && d.err || "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u043E\u0439\u0442\u0438";
+          haptic(false);
+          return;
+        }
+        hostCode.value = "";
+        haptic(true);
+        toast("\u0412\u0445\u043E\u0434: " + (d.who || "OK"));
+        await setListMode("host");
+      } finally {
+        $("btn-host-login").disabled = false;
+        $("btn-host-login").textContent = "\u0412\u043E\u0439\u0442\u0438";
+      }
+    }
+    async function doHostLogout() {
+      await logout();
+      toast("\u0412\u044B\u0448\u0435\u043B");
+      await setListMode("host");
+    }
     async function setListMode(mode) {
       listMode = mode;
       modeTabs.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
       const isHost = mode === "host";
-      hostBar.hidden = !isHost;
       dockLocal.hidden = isHost;
-      dockHost.hidden = !isHost;
       installBanner.classList.toggle("show", !isHost && !!deferredPrompt);
       listEl.style.display = isHost ? "none" : "";
+      updateHostSessionUI();
       if (!isHost) {
+        hostLogin.hidden = true;
+        hostWho.hidden = true;
+        hostBar.hidden = true;
+        dockHost.hidden = true;
         emptyEl.style.display = files.length ? "none" : "block";
         emptyEl.innerHTML = "<strong>\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E</strong>\u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B \u0438\u043B\u0438 \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0439 \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430";
         return refreshList();
       }
       emptyEl.style.display = "block";
       if (!hasHostAuth()) {
-        emptyEl.innerHTML = "<strong>\u0421\u0435\u0440\u0432\u0435\u0440 GRIZZLY</strong>\u041E\u0442\u043A\u0440\u043E\u0439 \u0440\u0435\u0434\u0430\u043A\u0442\u043E\u0440 \u0438\u0437 Telegram-\u0431\u043E\u0442\u0430: \u043A\u043E\u043C\u0430\u043D\u0434\u0430 <code>/editor</code>. \u0422\u0430\u043A \u0436\u0435, \u043A\u0430\u043A \u043A\u0430\u0431\u0438\u043D\u0435\u0442 \u2014 \u0447\u0435\u0440\u0435\u0437 \u043F\u043E\u0434\u043F\u0438\u0441\u044C Telegram.";
+        emptyEl.innerHTML = "<strong>\u0421\u0435\u0440\u0432\u0435\u0440 GRIZZLY</strong>\u0411\u0435\u0437 \u0431\u043E\u0442\u0430: \u0432 \u0438\u0433\u0440\u0435 <code>/editkey</code>, \u0432\u0432\u0435\u0434\u0438 \u043A\u043E\u0434 \u0432\u044B\u0448\u0435. \u0422\u043E\u043A\u0435\u043D \u0441\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u0441\u044F \u043D\u0430 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0435.";
         hostRes.innerHTML = '<option value="">\u0420\u0435\u0441\u0443\u0440\u0441\u2026</option>';
         hostFile.innerHTML = '<option value="">\u0424\u0430\u0439\u043B\u2026</option>';
         hostFile.disabled = true;
@@ -30736,6 +30838,11 @@ var require_app = __commonJS({
     $("btn-host-refresh").addEventListener("click", () => loadHostResources());
     $("btn-host-open").addEventListener("click", () => {
       if (hostRes.value && hostFile.value) openHostFile(hostRes.value, hostFile.value);
+    });
+    $("btn-host-login").addEventListener("click", () => doHostLogin());
+    $("btn-host-logout").addEventListener("click", () => doHostLogout());
+    hostCode.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") doHostLogin();
     });
     sheetBackdrop.addEventListener("click", closeSheet);
     sheetEl.addEventListener("click", (e) => {

@@ -1,5 +1,5 @@
-/* Service worker: полный офлайн после первого визита (бандл без CDN для редактора) */
-const CACHE = "grizzly-edit-pages-v2";
+﻿/* Service worker: полный офлайн после первого визита (бандл без CDN для редактора) */
+const CACHE = "grizzly-edit-pages-v3";
 const SHELL = [
   "./",
   "./index.html",
@@ -38,42 +38,28 @@ self.addEventListener("fetch", (event) => {
       caches.open(CACHE).then(async (cache) => {
         const hit = await cache.match(req);
         if (hit) return hit;
-        try {
-          const res = await fetch(req);
-          if (res.ok) cache.put(req, res.clone());
-          return res;
-        } catch (e) {
-          return hit || Response.error();
-        }
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
       })
     );
     return;
   }
 
-  const isShell =
-    req.mode === "navigate" ||
-    url.pathname.endsWith(".html") ||
-    url.pathname.endsWith(".js") ||
-    url.pathname.endsWith(".css") ||
-    url.pathname.endsWith("/") ||
-    url.pathname.endsWith("manifest.webmanifest");
-
-  if (isShell && url.origin === self.location.origin) {
-    event.respondWith(
-      fetch(req)
-        .then((res) => {
-          if (res.ok) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
-          }
-          return res;
-        })
-        .catch(() => caches.match(req).then((h) => h || caches.match("./index.html")))
-    );
-    return;
-  }
+  if (url.origin !== self.location.origin) return;
 
   event.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).catch(() => hit))
+    caches.open(CACHE).then(async (cache) => {
+      try {
+        const res = await fetch(req);
+        if (res.ok) cache.put(req, res.clone());
+        return res;
+      } catch {
+        const hit = await cache.match(req);
+        if (hit) return hit;
+        if (req.mode === "navigate") return cache.match("./index.html");
+        throw new Error("offline");
+      }
+    })
   );
 });

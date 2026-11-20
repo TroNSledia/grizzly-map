@@ -32,6 +32,19 @@
       <select id="host-res" aria-label="Ресурс"><option value="">Ресурс…</option></select>
       <select id="host-file" aria-label="Файл" disabled><option value="">Файл…</option></select>
     </div>
+    <div class="host-login" id="host-login" hidden>
+      <strong>Вход без Telegram</strong>
+      <p>В игре напиши <code>/editkey</code> — получишь код на 10 минут. Введи его сюда один раз: токен останется на телефоне.</p>
+      <div class="host-login-row">
+        <input id="host-code" type="text" inputmode="numeric" maxlength="8" autocomplete="one-time-code" placeholder="Код из игры" />
+        <button type="button" class="primary" id="btn-host-login">Войти</button>
+      </div>
+      <p class="host-login-err" id="host-login-err" hidden></p>
+    </div>
+    <div class="host-who" id="host-who" hidden>
+      <span id="host-who-label"></span>
+      <button type="button" class="ghost" id="btn-host-logout">Выйти</button>
+    </div>
     <div class="empty" id="empty">
       <strong>Пока пусто</strong>
       Создай файл или импортируй с телефона
