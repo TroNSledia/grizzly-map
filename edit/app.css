@@ -261,6 +261,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   display: flex; gap: 8px; padding: 10px var(--pad);
   flex-shrink: 0;
 }
+.host-bar[hidden] { display: none !important; }
 .host-bar select {
   flex: 1; min-width: 0; padding: 12px;
   border-radius: 10px; border: 1px solid var(--line);
@@ -272,6 +273,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-radius: 12px; border: 1px solid var(--line);
   background: var(--bg-soft); flex-shrink: 0;
 }
+.host-login[hidden] { display: none !important; }
 .host-login strong { display: block; color: var(--ink); margin-bottom: 6px; }
 .host-login p { margin: 0 0 10px; color: var(--muted); font-size: 0.9rem; line-height: 1.4; }
 .host-login code {
@@ -291,8 +293,10 @@ button:disabled { opacity: 0.45; cursor: default; }
   padding: 4px var(--pad) 0; flex-shrink: 0;
   color: var(--muted); font-size: 0.85rem;
 }
+.host-who[hidden] { display: none !important; }
 .host-who span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .host-who .ghost { padding: 6px 10px; font-size: 0.8rem; }
+.dock[hidden] { display: none !important; }
 
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
