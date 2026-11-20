@@ -528,8 +528,10 @@ ${rows}
 local owned = {}
 
 local function findOffer(offerId)
-  for index, offer in ipairs(OFFERS) do
-    if offer.id == offerId then return offer end
+  local i = 1
+  while OFFERS[i] do
+    if OFFERS[i].id == offerId then return OFFERS[i] end
+    i = i + 1
   end
 end
 
@@ -601,8 +603,16 @@ addEventHandler("onPlayerQuit", root, function()
 end)
 
 addEventHandler("onResourceStop", resourceRoot, function()
-  for key, veh in pairs(owned) do
-    if isElement(veh) then destroyElement(veh) end
+  local list = {}
+  local count = 0
+  for key in pairs(owned) do
+    count = count + 1
+    list[count] = owned[key]
+  end
+  local i = 1
+  while i <= count do
+    if isElement(list[i]) then destroyElement(list[i]) end
+    i = i + 1
   end
 end)
 `;
@@ -31423,7 +31433,30 @@ var require_app = __commonJS({
       destroyEditor();
       const host = $("editor-host");
       host.innerHTML = "";
+      let lastEnter = 0;
       const extensions = [
+        EditorView.domEventHandlers({
+          keydown(event) {
+            if (event.key === "Enter") lastEnter = Date.now();
+            return false;
+          }
+        }),
+        EditorState.transactionFilter.of((tr) => {
+          if (!tr.docChanged || !tr.isUserEvent("input") || tr.isUserEvent("input.paste")) return tr;
+          if (Date.now() - lastEnter < 700) return tr;
+          let spurious = false;
+          tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+            if (fromA !== toA) return;
+            const text = inserted.toString();
+            if (text === "\n" || text === "\n " || text === "\r\n") spurious = true;
+          });
+          return spurious ? [] : tr;
+        }),
+        EditorView.contentAttributes.of({
+          autocorrect: "off",
+          autocapitalize: "none",
+          spellcheck: "false"
+        }),
         lineNumbers(),
         highlightActiveLine(),
         highlightActiveLineGutter(),
@@ -31887,7 +31920,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=18", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=19", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
