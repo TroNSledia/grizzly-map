@@ -1361,6 +1361,67 @@ function clientBundleFor(fileName, intent) {
   }
   return null;
 }
+function firstStringArg(source, fnName) {
+  const re = new RegExp(fnName + "\\s*\\(([^)]*)\\)", "g");
+  const names = [];
+  let m;
+  while ((m = re.exec(source || ""))) {
+    const q = /"([^"]+)"/.exec(m[1]);
+    if (q) names.push(q[1]);
+  }
+  return names;
+}
+function scriptTag(xml, fileName, type) {
+  const tags = String(xml || "").match(/<script\b[^>]*>/gi) || [];
+  return tags.some((tag) => {
+    const src = /src\s*=\s*["']([^"']+)["']/i.exec(tag);
+    const kind = /type\s*=\s*["']([^"']+)["']/i.exec(tag);
+    return src && kind && src[1] === fileName && kind[1].toLowerCase() === type;
+  });
+}
+function analyzeResource(clientSrc, serverSrc, metaSrc) {
+  const lines = [];
+  let ok = true;
+  const fail = (text) => {
+    ok = false;
+    lines.push({ level: "error", text });
+  };
+  const warn = (text) => lines.push({ level: "warn", text });
+  const info = (text) => lines.push({ level: "log", text });
+  if (clientSrc == null) fail("\u041D\u0435\u0442 \u0444\u0430\u0439\u043B\u0430 client.lua");
+  if (serverSrc == null) fail("\u041D\u0435\u0442 \u0444\u0430\u0439\u043B\u0430 server.lua");
+  if (metaSrc == null) fail("\u041D\u0435\u0442 \u0444\u0430\u0439\u043B\u0430 meta.xml");
+  if (metaSrc != null) {
+    if (scriptTag(metaSrc, "client.lua", "client")) info("meta.xml \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0435\u0442 client.lua");
+    else fail("meta.xml \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0435\u0442 client.lua \u0442\u0438\u043F\u043E\u043C client");
+    if (scriptTag(metaSrc, "server.lua", "server")) info("meta.xml \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0435\u0442 server.lua");
+    else fail("meta.xml \u043D\u0435 \u043F\u043E\u0434\u043A\u043B\u044E\u0447\u0430\u0435\u0442 server.lua \u0442\u0438\u043F\u043E\u043C server");
+  }
+  const broken = (name, src) => {
+    if (src == null) return;
+    String(src).split("\n").forEach((line, i) => {
+      if (/^\s*(<=|>=|==|~=|,)/.test(line)) fail(name + ":" + (i + 1) + " \u0441\u0442\u0440\u043E\u043A\u0430 \u0440\u0430\u0437\u043E\u0440\u0432\u0430\u043D\u0430: " + line.trim());
+    });
+  };
+  broken("client.lua", clientSrc);
+  broken("server.lua", serverSrc);
+  if (clientSrc != null && serverSrc != null) {
+    const clientToServer = firstStringArg(clientSrc, "triggerServerEvent");
+    const serverToClient = firstStringArg(serverSrc, "triggerClientEvent");
+    const serverHandlers = firstStringArg(serverSrc, "addEventHandler");
+    const clientHandlers = firstStringArg(clientSrc, "addEventHandler");
+    if (!clientToServer.length && !serverToClient.length) warn("\u041A\u043B\u0438\u0435\u043D\u0442 \u0438 \u0441\u0435\u0440\u0432\u0435\u0440 \u043D\u0435 \u0432\u044B\u0437\u044B\u0432\u0430\u044E\u0442 \u0434\u0440\u0443\u0433 \u0434\u0440\u0443\u0433\u0430");
+    for (const name of clientToServer) {
+      if (serverHandlers.indexOf(name) === -1) fail("\u041A\u043B\u0438\u0435\u043D\u0442 \u0448\u043B\u0451\u0442 " + name + ", \u0441\u0435\u0440\u0432\u0435\u0440 \u0435\u0433\u043E \u043D\u0435 \u0441\u043B\u0443\u0448\u0430\u0435\u0442");
+      else info(name + ": \u043A\u043B\u0438\u0435\u043D\u0442 \u2192 \u0441\u0435\u0440\u0432\u0435\u0440");
+    }
+    for (const name of serverToClient) {
+      if (clientHandlers.indexOf(name) === -1) fail("\u0421\u0435\u0440\u0432\u0435\u0440 \u0448\u043B\u0451\u0442 " + name + ", \u043A\u043B\u0438\u0435\u043D\u0442 \u0435\u0433\u043E \u043D\u0435 \u0441\u043B\u0443\u0448\u0430\u0435\u0442");
+      else info(name + ": \u0441\u0435\u0440\u0432\u0435\u0440 \u2192 \u043A\u043B\u0438\u0435\u043D\u0442");
+    }
+  }
+  return { ok, lines };
+}
 function metaXml(clientName, serverName, resource) {
   const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   return `<meta>
@@ -31291,6 +31352,7 @@ var require_app = __commonJS({
     var outBody = $("out-body");
     var outPreview = $("out-preview");
     var btnRun = $("btn-run");
+    var btnCheck = $("btn-check");
     var langTabs = $("lang-tabs");
     var langSwitch = $("lang-switch");
     var files = [];
@@ -31352,6 +31414,7 @@ var require_app = __commonJS({
       }
     }
     function updateRunButton() {
+      if (btnCheck) btnCheck.disabled = !current || running;
       if (!current) {
         btnRun.disabled = true;
         return;
@@ -31359,6 +31422,51 @@ var require_app = __commonJS({
       const e = extOf(current.name);
       btnRun.disabled = !canRun(e) || running;
       btnRun.title = canRun(e) ? "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C (Ctrl+Enter)" : "\u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u044F\u0437\u044B\u043A\u0430 \u0437\u0430\u043F\u0443\u0441\u043A \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D";
+    }
+    async function luaCompiles(name, source) {
+      const engine = await loadLuaEngine();
+      try {
+        engine.global.set("SOURCE", source);
+        engine.global.set("NAME", name);
+        await engine.doString("local fn, err = load(SOURCE, NAME); if not fn then error(err) end");
+      } finally {
+        engine.global.close();
+      }
+    }
+    async function checkResource() {
+      if (!current || running) return;
+      if (dirty) await saveCurrent(true);
+      const started = performance.now();
+      running = true;
+      updateRunButton();
+      setStatus("\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430\u2026", "dirty");
+      const read = async (name) => {
+        if (current && current.name === name && view) return view.state.doc.toString();
+        const row = await getByName(name);
+        return row ? row.content || "" : null;
+      };
+      try {
+        const clientSrc = await read("client.lua");
+        const serverSrc = await read("server.lua");
+        const metaSrc = await read("meta.xml");
+        const report = analyzeResource(clientSrc, serverSrc, metaSrc);
+        for (const part of [["client.lua", clientSrc], ["server.lua", serverSrc]]) {
+          if (part[1] == null) continue;
+          try {
+            await luaCompiles(part[0], part[1]);
+            report.lines.push({ level: "log", text: part[0] + " \u0441\u043E\u0431\u0438\u0440\u0430\u0435\u0442\u0441\u044F" });
+          } catch (err) {
+            report.ok = false;
+            report.lines.push({ level: "error", text: part[0] + ": " + (err && err.message ? err.message : String(err)) });
+          }
+        }
+        report.lines.unshift({ level: "log", text: "\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430 client.lua, server.lua \u0438 meta.xml. \u042D\u0442\u043E \u043D\u0435 \u0437\u0430\u043F\u0443\u0441\u043A \u0432 MTA." });
+        showOutput({ ok: report.ok, lines: report.lines, ms: Math.round(performance.now() - started) });
+        setStatus(report.ok ? "\u0421\u0432\u044F\u0437\u043A\u0430 \u0441\u0445\u043E\u0434\u0438\u0442\u0441\u044F" : "\u0412 \u0441\u0432\u044F\u0437\u043A\u0435 \u0435\u0441\u0442\u044C \u043E\u0448\u0438\u0431\u043A\u0438", report.ok ? "ok" : "dirty");
+      } finally {
+        running = false;
+        updateRunButton();
+      }
     }
     function showOutput(result) {
       outPanel.classList.add("open");
@@ -31883,6 +31991,7 @@ var require_app = __commonJS({
     $("btn-save").addEventListener("click", () => saveCurrent(false));
     $("btn-export").addEventListener("click", exportCurrent);
     $("btn-run").addEventListener("click", () => runCurrent());
+    $("btn-check").addEventListener("click", () => checkResource());
     $("btn-out-clear").addEventListener("click", () => {
       outBody.innerHTML = "";
       outPreview.classList.remove("show");
@@ -31931,7 +32040,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=20", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=21", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();

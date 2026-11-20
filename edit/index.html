@@ -11,7 +11,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="app.css?v=20" />
+  <link rel="stylesheet" href="app.css?v=21" />
   <script>
     (function () {
       if (!("serviceWorker" in navigator)) return;
@@ -21,7 +21,7 @@
         reloaded = true;
         location.reload();
       });
-      navigator.serviceWorker.register("./sw.js?b=20", { updateViaCache: "none" }).catch(function () {});
+      navigator.serviceWorker.register("./sw.js?b=21", { updateViaCache: "none" }).catch(function () {});
     })();
   </script>
 </head>
@@ -70,6 +70,7 @@
     </div>
     <div class="editor-dock">
       <button type="button" class="run" id="btn-run" title="Запустить (Ctrl+Enter)" disabled>▶</button>
+      <button type="button" id="btn-check" title="Проверить client.lua, server.lua и meta.xml" disabled>Проверка</button>
       <span class="status" id="status">Готово</span>
       <button type="button" id="btn-export">Экспорт</button>
       <button type="button" class="primary" id="btn-save">Сохранить</button>
@@ -94,6 +95,6 @@
   <div class="toast" id="toast"></div>
   <input id="file-input" type="file" multiple hidden accept=".lua,.js,.ts,.tsx,.jsx,.mjs,.cjs,.py,.css,.html,.htm,.json,.md,.txt,.xml,.sql,.sh" />
 
-  <script type="module" src="app.js?v=20"></script>
+  <script type="module" src="app.js?v=21"></script>
 </body>
 </html>
