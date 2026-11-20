@@ -464,6 +464,19 @@ setmetatable(_G, {
   end
 })
 `;
+let luaparseReady = null;
+function loadLuaparse() {
+  if (window.luaparse) return Promise.resolve(window.luaparse);
+  if (!luaparseReady) luaparseReady = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "./luaparse.js?b=23";
+    s.onload = () => resolve(window.luaparse);
+    s.onerror = () => { luaparseReady = null; reject(new Error("Не удалось загрузить проверку Lua 5.1 — открой редактор один раз с интернетом")); };
+    document.head.appendChild(s);
+  });
+  return luaparseReady;
+}
+window.gzLoadLuaparse = loadLuaparse;
 async function runLua(source, logger) {
   const engine = await loadLuaEngine();
   try {
@@ -31689,15 +31702,30 @@ var require_app = __commonJS({
       btnRun.disabled = !canRun(e) || running;
       btnRun.title = canRun(e) ? "\u0417\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C (Ctrl+Enter)" : "\u0414\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u044F\u0437\u044B\u043A\u0430 \u0437\u0430\u043F\u0443\u0441\u043A \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u0435\u043D";
     }
+    // Проверка синтаксиса по правилам Lua 5.1 — в MTA именно 5.1 (а песочница ▶ работает на 5.4).
+    // Возвращает предупреждения: функции, которых в Lua 5.1 / MTA нет.
     async function luaCompiles(name, source) {
-      const engine = await loadLuaEngine();
+      const lp = await loadLuaparse();
       try {
-        engine.global.set("SOURCE", source);
-        engine.global.set("NAME", name);
-        await engine.doString("local fn, err = load(SOURCE, NAME); if not fn then error(err) end");
-      } finally {
-        engine.global.close();
+        lp.parse(source, { luaVersion: "5.1", comments: false, scope: false, locations: false });
+      } catch (err) {
+        const m = String(err && err.message || err).match(/^\[(\d+):(\d+)\]\s*(.*)$/);
+        throw new Error(m ? `строка ${m[1]}: ${m[3]} (Lua 5.1, как в MTA)` : String(err && err.message || err));
       }
+      const warns = [];
+      const only54 = [["utf8.", "библиотеки utf8 в MTA нет — используй utf8 из MTA (utf8.len есть только как функция MTA) или string"],
+        ["table.move", "table.move нет в Lua 5.1"], ["table.pack", "table.pack нет в Lua 5.1"], ["table.unpack", "в Lua 5.1 — просто unpack(...)"],
+        ["math.tointeger", "math.tointeger нет в Lua 5.1"], ["math.type", "math.type нет в Lua 5.1"], ["string.pack", "string.pack нет в Lua 5.1"],
+        ["coroutine.isyieldable", "coroutine.isyieldable нет в Lua 5.1"], ["load(", "в MTA для строки кода — loadstring(...)"]];
+      const lines = source.split("\n");
+      lines.forEach((line, i) => {
+        const code = line.replace(/--.*$/, "");
+        for (const [k, why] of only54) {
+          if (k === "utf8." && /\butf8\.(len|char|charpos|escape|find|fold|gsub|insert|match|ncharpos|next|remove|reverse|sub|title|byte|width)\b/.test(code)) continue;
+          if (code.includes(k) && (k !== "load(" || /(^|[^\w.:])load\(/.test(code))) warns.push(`${name}:${i + 1}: ${why}`);
+        }
+      });
+      return warns;
     }
     async function checkResource() {
       if (!current || running) return;
@@ -31719,8 +31747,9 @@ var require_app = __commonJS({
         for (const part of [["client.lua", clientSrc], ["server.lua", serverSrc]]) {
           if (part[1] == null) continue;
           try {
-            await luaCompiles(part[0], part[1]);
-            report.lines.push({ level: "log", text: part[0] + " \u0441\u043E\u0431\u0438\u0440\u0430\u0435\u0442\u0441\u044F" });
+            const warns = await luaCompiles(part[0], part[1]);
+            report.lines.push({ level: "log", text: part[0] + " \u0441\u043E\u0431\u0438\u0440\u0430\u0435\u0442\u0441\u044F (Lua 5.1)" });
+            for (const w of warns || []) report.lines.push({ level: "warn", text: w });
           } catch (err) {
             report.ok = false;
             report.lines.push({ level: "error", text: part[0] + ": " + (err && err.message ? err.message : String(err)) });
@@ -32306,10 +32335,15 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=22", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=23", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
+    // для server-send.js: текущий файл и проверка Lua 5.1
+    window.GZEdit = {
+      current: () => current ? { name: current.name, text: view ? view.state.doc.toString() : current.content || "" } : null,
+      checkLua: (name, text) => luaCompiles(name, text),
+    };
     buildLangTabs();
     refreshList();
     showView("list");
