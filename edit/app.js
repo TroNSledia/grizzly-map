@@ -30500,6 +30500,7 @@ var require_app = __commonJS({
       };
     }
     function updateHostSessionUI() {
+      if (!hostLogin || !hostWho || !hostBar || !dockHost) return;
       const authed = hasHostAuth();
       const who = getEditWho();
       const tg = telegram();
@@ -30537,7 +30538,6 @@ var require_app = __commonJS({
         hostCode.value = "";
         haptic(true);
         toast("\u0412\u0445\u043E\u0434: " + (d.who || "OK"));
-        await setListMode("host");
       } finally {
         $("btn-host-login").disabled = false;
         $("btn-host-login").textContent = "\u0412\u043E\u0439\u0442\u0438";
@@ -30546,21 +30546,21 @@ var require_app = __commonJS({
     async function doHostLogout() {
       await logout();
       toast("\u0412\u044B\u0448\u0435\u043B");
-      await setListMode("host");
     }
     async function setListMode(mode) {
+      if (mode === "host") mode = "local";
       listMode = mode;
-      modeTabs.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+      if (modeTabs) modeTabs.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
       const isHost = mode === "host";
       dockLocal.hidden = isHost;
       installBanner.classList.toggle("show", !isHost && !!deferredPrompt);
       listEl.style.display = isHost ? "none" : "";
       updateHostSessionUI();
       if (!isHost) {
-        hostLogin.hidden = true;
-        hostWho.hidden = true;
-        hostBar.hidden = true;
-        dockHost.hidden = true;
+        if (hostLogin) hostLogin.hidden = true;
+        if (hostWho) hostWho.hidden = true;
+        if (hostBar) hostBar.hidden = true;
+        if (dockHost) dockHost.hidden = true;
         emptyEl.style.display = files.length ? "none" : "block";
         emptyEl.innerHTML = "<strong>\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E</strong>\u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B \u0438\u043B\u0438 \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0439 \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430";
         return refreshList();
@@ -30827,21 +30827,26 @@ var require_app = __commonJS({
     });
     $("modal-cancel").addEventListener("click", closeModal);
     $("modal-ok").addEventListener("click", modalOk);
-    modeTabs.addEventListener("click", (e) => {
+    if (modeTabs) modeTabs.addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-mode]");
-      if (btn) setListMode(btn.dataset.mode);
+      if (btn && btn.dataset.mode !== "host") setListMode(btn.dataset.mode);
     });
-    hostRes.addEventListener("change", () => loadHostFiles());
-    hostFile.addEventListener("change", () => {
-      $("btn-host-open").disabled = !hostFile.value;
+    if (hostRes) hostRes.addEventListener("change", () => loadHostFiles());
+    if (hostFile) hostFile.addEventListener("change", () => {
+      const openBtn = $("btn-host-open");
+      if (openBtn) openBtn.disabled = !hostFile.value;
     });
-    $("btn-host-refresh").addEventListener("click", () => loadHostResources());
-    $("btn-host-open").addEventListener("click", () => {
-      if (hostRes.value && hostFile.value) openHostFile(hostRes.value, hostFile.value);
+    const btnHostRefresh = $("btn-host-refresh");
+    if (btnHostRefresh) btnHostRefresh.addEventListener("click", () => loadHostResources());
+    const btnHostOpen = $("btn-host-open");
+    if (btnHostOpen) btnHostOpen.addEventListener("click", () => {
+      if (hostRes && hostRes.value && hostFile && hostFile.value) openHostFile(hostRes.value, hostFile.value);
     });
-    $("btn-host-login").addEventListener("click", () => doHostLogin());
-    $("btn-host-logout").addEventListener("click", () => doHostLogout());
-    hostCode.addEventListener("keydown", (e) => {
+    const btnHostLogin = $("btn-host-login");
+    if (btnHostLogin) btnHostLogin.addEventListener("click", () => doHostLogin());
+    const btnHostLogout = $("btn-host-logout");
+    if (btnHostLogout) btnHostLogout.addEventListener("click", () => doHostLogout());
+    if (hostCode) hostCode.addEventListener("keydown", (e) => {
       if (e.key === "Enter") doHostLogin();
     });
     sheetBackdrop.addEventListener("click", closeSheet);
@@ -30886,8 +30891,7 @@ var require_app = __commonJS({
     buildLangTabs();
     refreshList();
     showView("list");
-    if (hasHostAuth()) setListMode("host");
-    else setListMode("local");
+    setListMode("local");
   }
 });
 export default require_app();
