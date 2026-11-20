@@ -1253,9 +1253,171 @@ function fileExtOf(nameOrExt) {
   const m = /\.([A-Za-z0-9]+)$/.exec(nameOrExt || "");
   return (m ? m[1] : "txt").toLowerCase();
 }
+function intentFromName(fileName) {
+  const explicit = parseScriptIntent(fileName);
+  if (explicit && explicit.side) return explicit;
+  const base = String(fileName || "").replace(/\.[A-Za-z0-9]+$/, "").replace(/[_-]+/g, " ").trim();
+  const spec = lookupScript(base);
+  if (!spec) return null;
+  const side = /(^|[\s_])server($|[\s_])/i.test(base) ? "server" : "client";
+  return {
+    side,
+    slug: asciiSlug(base) || spec.topic,
+    title: base || spec.title,
+    topic: spec.topic,
+    spec
+  };
+}
+function sameDoc(a, b) {
+  const norm = (s) => String(s || "").replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "").replace(/\n+$/, "");
+  return norm(a) === norm(b);
+}
+function isStockTemplate(content) {
+  const t = String(content || "").replace(/\r\n/g, "\n").replace(/[ \t]+$/gm, "").replace(/\n+$/, "");
+  return /^-- \S+\nlocal function main\(\)\n  print\("hello"\)\nend\n\nmain\(\)$/.test(t) || /^\/\/ \S+\nfunction main\(\)(?:: void)? \{\n  console\.log\("hello"\);\n\}\n\nmain\(\);$/.test(t) || /^# \S+\ndef main\(\):\n    print\("hello"\)\n\nif __name__ == "__main__":\n    main\(\)$/.test(t) || /^<!doctype html>/i.test(t) || /^body \{\n  font-family: system-ui/.test(t) || /"name": "grizzly"/.test(t) || /^# \u0417\u0430\u0433\u043E\u043B\u043E\u0432\u043E\u043A\n/.test(t);
+}
+function placeInLanguage(ext, name, intent) {
+  const spec = intent.spec;
+  if (!spec) return "";
+  const title = spec.title || intent.title || name;
+  const offers = offersFor(spec).map((o) => ({
+    id: o.id,
+    label: o.label,
+    price: o.price | 0
+  }));
+  const q = (s) => JSON.stringify(String(s));
+  const list = offers.map((o) => `  { id: ${q(o.id)}, label: ${q(o.label)}, price: ${o.price} }`).join(",\n");
+  const pyList = offers.map((o) => `    {"id": ${q(o.id)}, "label": ${q(o.label)}, "price": ${o.price}}`).join(",\n");
+  if (ext === "js" || ext === "mjs" || ext === "cjs" || ext === "jsx") {
+    return `// ${name} \u2014 ${title}
+const offers = [
+${list}
+];
+
+function useOffer(id) {
+  const offer = offers.find((item) => item.id === id);
+  if (!offer) {
+    console.log("\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0433\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F");
+    return null;
+  }
+  console.log(offer.price > 0 ? offer.label + " \xB7 $" + offer.price : offer.label);
+  return offer;
+}
+
+for (const offer of offers) useOffer(offer.id);
+`;
+  }
+  if (ext === "ts" || ext === "tsx") {
+    return `// ${name} \u2014 ${title}
+type Offer = { id: string; label: string; price: number };
+
+const offers: Offer[] = [
+${list}
+];
+
+function useOffer(id: string): Offer | null {
+  const offer = offers.find((item) => item.id === id);
+  if (!offer) {
+    console.log("\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0433\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F");
+    return null;
+  }
+  console.log(offer.price > 0 ? offer.label + " \xB7 $" + offer.price : offer.label);
+  return offer;
+}
+
+for (const offer of offers) useOffer(offer.id);
+`;
+  }
+  if (ext === "py") {
+    return `# ${name} \u2014 ${title}
+offers = [
+${pyList}
+]
+
+def use_offer(offer_id):
+    offer = next((item for item in offers if item["id"] == offer_id), None)
+    if offer is None:
+        print("\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0433\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F")
+        return None
+    price = offer["price"]
+    print(f"{offer['label']} \xB7 \${price}" if price else offer["label"])
+    return offer
+
+for offer in offers:
+    use_offer(offer["id"])
+`;
+  }
+  if (ext === "html" || ext === "htm") {
+    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const buttons = offers.map((o) => `  <button type="button">${esc(o.label)}${o.price ? " \xB7 $" + o.price : ""}</button>`).join("\n");
+    return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <title>${esc(title)}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #121416; color: #e8eaed; padding: 24px; }
+    button { margin: 8px 8px 0 0; padding: 10px 14px; border: 0; border-radius: 10px; background: #e89130; }
+  </style>
+</head>
+<body>
+  <h1>${esc(title)}</h1>
+${buttons}
+</body>
+</html>
+`;
+  }
+  if (ext === "css") {
+    return `/* ${title} */
+body {
+  font-family: system-ui, sans-serif;
+  background: #121416;
+  color: #e8eaed;
+}
+
+.place {
+  max-width: 360px;
+  margin: 24px auto;
+  padding: 16px;
+  border: 1px solid #2c3238;
+  border-radius: 12px;
+}
+
+.place h1 { color: #e89130; }
+.place button {
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #e89130;
+}
+`;
+  }
+  if (ext === "json") {
+    return JSON.stringify({ name: title, topic: spec.topic, offers }, null, 2) + "\n";
+  }
+  if (ext === "md" || ext === "markdown") {
+    const lines = offers.map((o) => `- ${o.label}${o.price ? ` \xB7 $${o.price}` : ""}`).join("\n");
+    return `# ${title}
+
+\u0421\u043A\u0440\u0438\u043F\u0442 \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043C\u0435\u0441\u0442\u0430.
+
+${lines}
+`;
+  }
+  if (ext === "txt") {
+    const lines = offers.map((o) => `- ${o.label}${o.price ? ` \xB7 $${o.price}` : ""}`).join("\n");
+    return `${title}\n\n${lines}\n`;
+  }
+  return "";
+}
 function starterFor(nameOrExt, intent) {
   const e = fileExtOf(nameOrExt);
   const name2 = nameOrExt.includes(".") ? nameOrExt : `untitled.${e}`;
+  if (intent && intent.spec && e !== "lua") {
+    const themed = placeInLanguage(e, name2, intent);
+    if (themed) return themed;
+  }
   if (intent && intent.side && e === "lua") return mtaStarter(intent);
   if (e === "lua") return `-- ${name2}
 local function main()
@@ -31215,9 +31377,10 @@ var require_app = __commonJS({
         return;
       }
       const prevContent = view.state.doc.toString();
-      const prevIntent = fileExtOf(current.name) === "lua" ? parseScriptIntent(current.name) : null;
-      const untouched = prevContent.replace(/\s+$/, "") === starterFor(current.name, prevIntent).replace(/\s+$/, "");
-      const nextIntent = L.ext === "lua" ? parseScriptIntent(newName) || prevIntent : null;
+      const prevIntent = intentFromName(current.name);
+      const prevStarter = starterFor(current.name, prevIntent);
+      const untouched = sameDoc(prevContent, prevStarter) || isStockTemplate(prevContent);
+      const nextIntent = intentFromName(newName);
       const content2 = untouched ? starterFor(newName, nextIntent) : prevContent;
       current.name = newName;
       current.content = content2;
@@ -31238,7 +31401,16 @@ var require_app = __commonJS({
       current = f;
       dirty = false;
       titleEdit.textContent = f.name;
-      mountEditor(f.content || "", f.name);
+      const openedIntent = intentFromName(f.name);
+      const expected = starterFor(f.name, openedIntent);
+      let opened = f.content || "";
+      if (expected && isStockTemplate(opened) && !sameDoc(opened, expected)) {
+        opened = expected;
+        f.content = opened;
+        f.updatedAt = Date.now();
+        putFile(f);
+      }
+      mountEditor(opened, f.name);
       setStatus("\u0413\u043E\u0442\u043E\u0432\u043E", "ok");
       outPanel.classList.remove("open", "is-error");
       outBody.innerHTML = "";
@@ -31300,7 +31472,7 @@ var require_app = __commonJS({
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "client.lua \u0434\u043E\u0431\u0430\u0432\u0438\u0442 server.lua \u0438 meta.xml. \u0421\u043B\u043E\u0432\u0430\u0440\u044C: bank, cityhall, rental, dealership, hospital \u0438 \u0435\u0449\u0451 \u0441\u043E\u0442\u043D\u044F. \u041F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438 \u0442\u043E\u0436\u0435: \u0431\u0430\u043D\u043A, \u043C\u044D\u0440\u0438\u044F, \u0430\u0440\u0435\u043D\u0434\u0430 \u0430\u0432\u0442\u043E, \u0430\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D, \u0431\u043E\u043B\u044C\u043D\u0438\u0446\u0430.";
+        modalHint.textContent = "auction, bank, hospital \u2014 \u0441\u043A\u0440\u0438\u043F\u0442 \u044D\u0442\u043E\u0433\u043E \u043C\u0435\u0441\u0442\u0430. \u0412\u043A\u043B\u0430\u0434\u043A\u0430 \u044F\u0437\u044B\u043A\u0430 \u043F\u0435\u0440\u0435\u043F\u0438\u0448\u0435\u0442 \u0435\u0433\u043E \u043D\u0430 Python, JS, HTML \u0438 \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435.";
         fillModalLang("lua");
         modalInput.value = "untitled.lua";
         $("modal-ok").textContent = "\u0421\u043E\u0437\u0434\u0430\u0442\u044C";
@@ -31344,11 +31516,14 @@ var require_app = __commonJS({
         const typed = String(modalInput.value || "").trim();
         const L = langById(modalLang.value);
         const plainClient = L.ext === "lua" && isPlainClientName(typed);
-        let intent = L.ext === "lua" ? parseScriptIntent(typed) : null;
-        if (plainClient) intent = { side: "client", slug: "script", title: "script", topic: "generic" };
+        const explicit = parseScriptIntent(typed);
+        let intent = null;
+        if (plainClient) intent = { side: "client", slug: "script", title: "script", topic: "generic", spec: null };
+        else if (explicit && explicit.side) intent = explicit;
+        else intent = intentFromName(typed);
         let raw = typed.replace(/[\\/:*?"<>|]/g, "_") || "untitled";
         if (plainClient) raw = "client";
-        else if (intent) raw = intent.slug + "_" + intent.side;
+        else if (explicit && explicit.side) raw = explicit.slug + "_" + explicit.side;
         const name2 = sanitizeName(withExt(raw, L.ext));
         if (!name2) {
           toast("\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u0444\u0430\u0439\u043B\u0430");
