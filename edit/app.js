@@ -354,6 +354,102 @@ var init_run = __esm({
   }
 });
 
+// host.js
+function apiBase() {
+  return new URLSearchParams(location.search).get("api") || DEFAULT_API;
+}
+function telegram() {
+  const tg = window.Telegram && window.Telegram.WebApp;
+  return tg || null;
+}
+function initTelegram() {
+  const tg = telegram();
+  if (!tg) return null;
+  try {
+    tg.ready();
+    tg.expand && tg.expand();
+    tg.setHeaderColor && tg.setHeaderColor("#121416");
+    tg.setBackgroundColor && tg.setBackgroundColor("#121416");
+    tg.enableClosingConfirmation && tg.enableClosingConfirmation();
+  } catch (_) {
+  }
+  return tg;
+}
+function hasHostAuth() {
+  const tg = telegram();
+  return !!(tg && tg.initData);
+}
+function parts(t2) {
+  const a = [];
+  const s = String(t2 ?? "");
+  for (let i2 = 0; i2 < s.length; i2 += 15e3) a.push(s.slice(i2, i2 + 15e3));
+  return a.length ? a : [""];
+}
+async function call(req) {
+  const tg = telegram();
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 25e3);
+  try {
+    const r = await fetch(apiBase(), {
+      method: "POST",
+      headers: { "content-type": "text/plain" },
+      body: JSON.stringify({ initData: tg ? tg.initData : "", req }),
+      signal: ac.signal
+    });
+    const txt = await r.text();
+    try {
+      return JSON.parse(txt);
+    } catch {
+      return { ok: false, err: "HTTP " + r.status + ": " + txt.slice(0, 300) };
+    }
+  } catch (e) {
+    let ping = "";
+    try {
+      ping = await (await fetch(apiBase() + "/ping")).text();
+    } catch (e2) {
+      ping = "ping: " + e2;
+    }
+    return {
+      ok: false,
+      err: (e.name === "AbortError" ? "\u0422\u0430\u0439\u043C\u0430\u0443\u0442 25 \u0441" : String(e)) + "\n/ping \u2192 " + ping.slice(0, 200)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function listResources() {
+  return call({ a: "ed_res" });
+}
+async function listFiles2(res) {
+  return call({ a: "ed_files", res });
+}
+async function openFile(res, rel) {
+  const d = await call({ a: "ed_open", res, rel });
+  if (d && d.ok && Array.isArray(d.text)) d.text = d.text.join("");
+  return d;
+}
+async function saveDry(res, rel, text) {
+  return call({ a: "ed_save", res, rel, text: parts(text), dry: true });
+}
+async function saveFile(res, rel, text, restart) {
+  return call({ a: "ed_save", res, rel, text: parts(text), restart: !!restart });
+}
+function haptic(ok) {
+  const tg = telegram();
+  try {
+    if (tg && tg.HapticFeedback) {
+      tg.HapticFeedback.notificationOccurred(ok ? "success" : "error");
+    }
+  } catch (_) {
+  }
+}
+var DEFAULT_API;
+var init_host = __esm({
+  "host.js"() {
+    DEFAULT_API = "https://grizzly.kuzea1945.workers.dev";
+  }
+});
+
 // langs.js
 function langById(id2) {
   return LANGS.find((l) => l.id === id2) || LANGS[LANGS.length - 1];
@@ -1122,11 +1218,11 @@ var init_dist = __esm({
       */
       replace(from, to, text) {
         [from, to] = clip(this, from, to);
-        let parts = [];
+        let parts2 = [];
         this.decompose(
           0,
           from,
-          parts,
+          parts2,
           2
           /* Open.To */
         );
@@ -1134,18 +1230,18 @@ var init_dist = __esm({
           text.decompose(
             0,
             text.length,
-            parts,
+            parts2,
             1 | 2
             /* Open.To */
           );
         this.decompose(
           to,
           this.length,
-          parts,
+          parts2,
           1
           /* Open.From */
         );
-        return TextNode.from(parts, this.length - (to - from) + text.length);
+        return TextNode.from(parts2, this.length - (to - from) + text.length);
       }
       /**
       Append another document to this one.
@@ -1158,9 +1254,9 @@ var init_dist = __esm({
       */
       slice(from, to = this.length) {
         [from, to] = clip(this, from, to);
-        let parts = [];
-        this.decompose(from, to, parts, 0);
-        return TextNode.from(parts, to - from);
+        let parts2 = [];
+        this.decompose(from, to, parts2, 0);
+        return TextNode.from(parts2, to - from);
       }
       /**
       Test whether this text is equal to another instance.
@@ -1920,17 +2016,17 @@ var init_dist = __esm({
       Serialize this change set to a JSON-representable value.
       */
       toJSON() {
-        let parts = [];
+        let parts2 = [];
         for (let i2 = 0; i2 < this.sections.length; i2 += 2) {
           let len = this.sections[i2], ins = this.sections[i2 + 1];
           if (ins < 0)
-            parts.push(len);
+            parts2.push(len);
           else if (ins == 0)
-            parts.push([len]);
+            parts2.push([len]);
           else
-            parts.push([len].concat(this.inserted[i2 >> 1].toJSON()));
+            parts2.push([len].concat(this.inserted[i2 >> 1].toJSON()));
         }
-        return parts;
+        return parts2;
       }
       /**
       Create a change set for the given changes, for a document of the
@@ -6050,13 +6146,13 @@ function attrsFromFacet(view, facet, base2) {
   return base2;
 }
 function normalizeKeyName(name2, platform) {
-  const parts = name2.split(/-(?!$)/);
-  let result = parts[parts.length - 1];
+  const parts2 = name2.split(/-(?!$)/);
+  let result = parts2[parts2.length - 1];
   if (result == "Space")
     result = " ";
   let alt, ctrl, shift2, meta2;
-  for (let i2 = 0; i2 < parts.length - 1; ++i2) {
-    const mod = parts[i2];
+  for (let i2 = 0; i2 < parts2.length - 1; ++i2) {
+    const mod = parts2[i2];
     if (/^(cmd|meta|m)$/i.test(mod))
       meta2 = true;
     else if (/^a(lt)?$/i.test(mod))
@@ -6114,9 +6210,9 @@ function buildKeymap(bindings, platform = currentPlatform) {
   let add = (scope, key, command2, preventDefault, stopPropagation) => {
     var _a2, _b;
     let scopeObj = bound[scope] || (bound[scope] = /* @__PURE__ */ Object.create(null));
-    let parts = key.split(/ (?!$)/).map((k) => normalizeKeyName(k, platform));
-    for (let i2 = 1; i2 < parts.length; i2++) {
-      let prefix = parts.slice(0, i2).join(" ");
+    let parts2 = key.split(/ (?!$)/).map((k) => normalizeKeyName(k, platform));
+    for (let i2 = 1; i2 < parts2.length; i2++) {
+      let prefix = parts2.slice(0, i2).join(" ");
       checkPrefix(prefix, true);
       if (!scopeObj[prefix])
         scopeObj[prefix] = {
@@ -6132,7 +6228,7 @@ function buildKeymap(bindings, platform = currentPlatform) {
           }]
         };
     }
-    let full = parts.join(" ");
+    let full = parts2.join(" ");
     checkPrefix(full, false);
     let binding = scopeObj[full] || (scopeObj[full] = {
       preventDefault: false,
@@ -29964,6 +30060,7 @@ var require_app = __commonJS({
   "app.js"() {
     init_db();
     init_run();
+    init_host();
     init_langs();
     init_dist();
     init_dist2();
@@ -30006,6 +30103,32 @@ var require_app = __commonJS({
     var modalMode = null;
     var deferredPrompt = null;
     var running = false;
+    var listMode = "local";
+    var hostSaved = "";
+    var sheetEl = $("sheet");
+    var sheetBackdrop = $("sheet-backdrop");
+    var hostBar = $("host-bar");
+    var hostRes = $("host-res");
+    var hostFile = $("host-file");
+    var dockLocal = $("dock-local");
+    var dockHost = $("dock-host");
+    var modeTabs = $("mode-tabs");
+    function isHostFile() {
+      return !!(current && current.host);
+    }
+    function closeSheet() {
+      sheetEl.classList.remove("on");
+      sheetBackdrop.classList.remove("on");
+      sheetEl.innerHTML = "";
+    }
+    function showSheet(html2) {
+      sheetEl.innerHTML = html2;
+      sheetEl.classList.add("on");
+      sheetBackdrop.classList.add("on");
+    }
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    }
     function toast(msg) {
       toastEl.textContent = msg;
       toastEl.classList.add("show");
@@ -30108,7 +30231,7 @@ var require_app = __commonJS({
         li.querySelector(".sub").textContent = `${L.label} \xB7 ${(f.content || "").length} \u0441\u0438\u043C\u0432. \xB7 ${formatWhen(f.updatedAt)}`;
         li.addEventListener("click", (ev) => {
           if (ev.target.closest("[data-act]")) return;
-          openFile(f.id);
+          openFile2(f.id);
         });
         li.querySelector('[data-act="rename"]').addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -30184,12 +30307,18 @@ var require_app = __commonJS({
     }
     function scheduleAutosave() {
       clearTimeout(autosaveTimer);
+      if (isHostFile()) return;
       autosaveTimer = setTimeout(() => {
         if (dirty && current) saveCurrent(true);
       }, 900);
     }
     async function setLanguage(langId) {
       if (!current || !view) return;
+      if (isHostFile()) {
+        toast("\u041D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435 \u0437\u0430\u0434\u0430\u0451\u0442 \u043F\u0443\u0442\u044C \u0444\u0430\u0439\u043B\u0430");
+        syncLangTabs();
+        return;
+      }
       const L = langById(langId);
       const old = langByName(current.name);
       const newName = withExt(current.name, L.ext);
@@ -30217,7 +30346,7 @@ var require_app = __commonJS({
       toast("." + L.ext);
       refreshList();
     }
-    async function openFile(id2) {
+    async function openFile2(id2) {
       const f = await getFile(id2);
       if (!f) return toast("\u0424\u0430\u0439\u043B \u043D\u0435 \u043D\u0430\u0439\u0434\u0435\u043D");
       current = f;
@@ -30235,6 +30364,10 @@ var require_app = __commonJS({
     }
     async function saveCurrent(silent) {
       if (!current || !view) return;
+      if (isHostFile()) {
+        if (!silent) return saveHostFlow();
+        return;
+      }
       current.content = view.state.doc.toString();
       current.updatedAt = Date.now();
       await putFile(current);
@@ -30242,6 +30375,132 @@ var require_app = __commonJS({
       setStatus(silent ? "\u0410\u0432\u0442\u043E\u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u0438\u0435" : "\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E", "ok");
       if (!silent) toast("\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E");
       refreshList();
+    }
+    async function openHostFile(res, rel) {
+      setStatus("\u041E\u0442\u043A\u0440\u044B\u0432\u0430\u044E\u2026", "dirty");
+      const d = await openFile(res, rel);
+      if (!d.ok) {
+        setStatus("\u041E\u0448\u0438\u0431\u043A\u0430", "dirty");
+        return showSheet('<h3>\u041D\u0435 \u043E\u0442\u043A\u0440\u044B\u0442\u044C</h3><div class="err">' + esc(d.err) + '</div><div class="row"><button type="button" id="sheet-ok">OK</button></div>');
+      }
+      const name2 = rel.split("/").pop() || rel;
+      current = { id: "host:" + res + "/" + rel, name: name2, content: d.text || "", host: { res, rel } };
+      hostSaved = current.content;
+      dirty = false;
+      titleEdit.textContent = res + "/" + rel;
+      mountEditor(current.content, name2);
+      setStatus("\u0421\u0435\u0440\u0432\u0435\u0440 \xB7 " + (d.lines || "?") + " \u0441\u0442\u0440.", "ok");
+      outPanel.classList.remove("open", "is-error");
+      outBody.innerHTML = "";
+      outPreview.classList.remove("show");
+      syncLangTabs();
+      updateRunButton();
+      showView("edit");
+      closeSheet();
+    }
+    async function saveHostFlow() {
+      if (!isHostFile() || !view) return;
+      const text = view.state.doc.toString();
+      const { res, rel } = current.host;
+      if (text === hostSaved) {
+        return showSheet('<h3>\u0411\u0435\u0437 \u0438\u0437\u043C\u0435\u043D\u0435\u043D\u0438\u0439</h3><div class="row"><button type="button" id="sheet-ok">OK</button></div>');
+      }
+      setStatus("\u041F\u0440\u043E\u0432\u0435\u0440\u043A\u0430\u2026", "dirty");
+      $("btn-save").disabled = true;
+      const d = await saveDry(res, rel, text);
+      $("btn-save").disabled = false;
+      if (!d.ok) {
+        setStatus("\u041E\u0448\u0438\u0431\u043A\u0430", "dirty");
+        const m = (d.detail || "").match(/:(\d+):/);
+        showSheet(
+          "<h3>" + esc(d.err) + "</h3>" + (d.detail ? '<div class="err">' + esc(d.detail) + "</div>" : "") + '<div class="row">' + (m ? '<button type="button" id="sheet-line">\u041A \u0441\u0442\u0440\u043E\u043A\u0435 ' + m[1] + "</button>" : "") + '<button type="button" id="sheet-ok">OK</button></div>'
+        );
+        if (m) {
+          $("sheet-line").onclick = () => {
+            closeSheet();
+            const line = Math.max(0, Number(m[1]) - 1);
+            if (view) view.dispatch({ selection: { anchor: view.state.doc.line(line + 1).from }, scrollIntoView: true });
+          };
+        }
+        haptic(false);
+        return;
+      }
+      showSheet(
+        "<h3>\u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C " + esc(rel) + "?</h3><div>+" + d.add + " / \u2212" + d.del + ' \u0441\u0442\u0440\u043E\u043A. \u0411\u0443\u0434\u0435\u0442 \u043A\u043E\u043F\u0438\u044F \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435 (\u043E\u0442\u043A\u0430\u0442 \u2014 /undo \u0432 \u0431\u043E\u0442\u0435).</div><label><input type="checkbox" id="host-restart" checked> \u041F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0441\u0442\u0438\u0442\u044C ' + esc(res) + '</label><div class="row"><button type="button" id="sheet-cancel">\u041E\u0442\u043C\u0435\u043D\u0430</button><button type="button" class="primary" id="sheet-go">\u{1F4BE} \u0421\u043E\u0445\u0440\u0430\u043D\u0438\u0442\u044C</button></div>'
+      );
+      $("sheet-cancel").onclick = closeSheet;
+      $("sheet-go").onclick = async () => {
+        $("sheet-go").disabled = true;
+        setStatus("\u0421\u043E\u0445\u0440\u0430\u043D\u044F\u044E \u043D\u0430 \u0445\u043E\u0441\u0442\u0438\u043D\u0433\u2026", "dirty");
+        const r = await saveFile(res, rel, text, $("host-restart").checked);
+        if (!r.ok) {
+          haptic(false);
+          return showSheet(
+            '<h3>\u041D\u0435 \u0441\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E</h3><div class="err">' + esc(r.err + (r.detail ? "\n" + r.detail : "")) + '</div><div class="row"><button type="button" id="sheet-ok">OK</button></div>'
+          );
+        }
+        hostSaved = text;
+        dirty = false;
+        current.content = text;
+        setStatus("\u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435", "ok");
+        haptic(true);
+        showSheet(
+          "<h3>\u2705 \u0421\u043E\u0445\u0440\u0430\u043D\u0435\u043D\u043E</h3><div>\u041A\u043E\u043F\u0438\u044F #" + r.backup + (r.restarted ? ", \u0440\u0435\u0441\u0443\u0440\u0441 \u043F\u0435\u0440\u0435\u0437\u0430\u043F\u0443\u0449\u0435\u043D" : "") + '.</div><div class="row"><button type="button" id="sheet-ok">OK</button></div>'
+        );
+      };
+    }
+    async function setListMode(mode) {
+      listMode = mode;
+      modeTabs.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
+      const isHost = mode === "host";
+      hostBar.hidden = !isHost;
+      dockLocal.hidden = isHost;
+      dockHost.hidden = !isHost;
+      installBanner.classList.toggle("show", !isHost && !!deferredPrompt);
+      listEl.style.display = isHost ? "none" : "";
+      if (!isHost) {
+        emptyEl.style.display = files.length ? "none" : "block";
+        emptyEl.innerHTML = "<strong>\u041F\u043E\u043A\u0430 \u043F\u0443\u0441\u0442\u043E</strong>\u0421\u043E\u0437\u0434\u0430\u0439 \u0444\u0430\u0439\u043B \u0438\u043B\u0438 \u0438\u043C\u043F\u043E\u0440\u0442\u0438\u0440\u0443\u0439 \u0441 \u0442\u0435\u043B\u0435\u0444\u043E\u043D\u0430";
+        return refreshList();
+      }
+      emptyEl.style.display = "block";
+      if (!hasHostAuth()) {
+        emptyEl.innerHTML = "<strong>\u0421\u0435\u0440\u0432\u0435\u0440 GRIZZLY</strong>\u041E\u0442\u043A\u0440\u043E\u0439 \u0440\u0435\u0434\u0430\u043A\u0442\u043E\u0440 \u0438\u0437 Telegram-\u0431\u043E\u0442\u0430: \u043A\u043E\u043C\u0430\u043D\u0434\u0430 <code>/editor</code>. \u0422\u0430\u043A \u0436\u0435, \u043A\u0430\u043A \u043A\u0430\u0431\u0438\u043D\u0435\u0442 \u2014 \u0447\u0435\u0440\u0435\u0437 \u043F\u043E\u0434\u043F\u0438\u0441\u044C Telegram.";
+        hostRes.innerHTML = '<option value="">\u0420\u0435\u0441\u0443\u0440\u0441\u2026</option>';
+        hostFile.innerHTML = '<option value="">\u0424\u0430\u0439\u043B\u2026</option>';
+        hostFile.disabled = true;
+        $("btn-host-open").disabled = true;
+        return;
+      }
+      emptyEl.innerHTML = "<strong>\u0425\u043E\u0441\u0442\u0438\u043D\u0433</strong>\u0412\u044B\u0431\u0435\u0440\u0438 \u0440\u0435\u0441\u0443\u0440\u0441 \u0438 \u0444\u0430\u0439\u043B \u2014 \u043F\u0440\u0430\u0432\u043A\u0438 \u0443\u0439\u0434\u0443\u0442 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440 (\u0441 \u043A\u043E\u043F\u0438\u0435\u0439).";
+      await loadHostResources();
+    }
+    async function loadHostResources() {
+      hostRes.innerHTML = '<option value="">\u0417\u0430\u0433\u0440\u0443\u0437\u043A\u0430\u2026</option>';
+      hostFile.innerHTML = '<option value="">\u0424\u0430\u0439\u043B\u2026</option>';
+      hostFile.disabled = true;
+      $("btn-host-open").disabled = true;
+      const d = await listResources();
+      if (!d.ok) {
+        hostRes.innerHTML = '<option value="">\u2014</option>';
+        emptyEl.innerHTML = '<strong>\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C</strong><span class="err">' + esc(d.err) + "</span>";
+        return;
+      }
+      hostRes.innerHTML = '<option value="">\u0420\u0435\u0441\u0443\u0440\u0441\u2026</option>' + d.res.map((r) => '<option value="' + esc(r.n) + '">' + esc(r.n) + (r.s === "running" ? "" : " (" + esc(r.s) + ")") + "</option>").join("");
+    }
+    async function loadHostFiles() {
+      const res = hostRes.value;
+      hostFile.disabled = true;
+      hostFile.innerHTML = '<option value="">\u0424\u0430\u0439\u043B\u2026</option>';
+      $("btn-host-open").disabled = true;
+      if (!res) return;
+      const d = await listFiles2(res);
+      if (!d.ok) {
+        toast(d.err || "\u041E\u0448\u0438\u0431\u043A\u0430");
+        return;
+      }
+      hostFile.innerHTML = '<option value="">\u0424\u0430\u0439\u043B\u2026</option>' + d.files.map((f) => '<option value="' + esc(f.p) + '">' + esc(f.p) + (f.t ? " \xB7 " + esc(f.t) : "") + "</option>").join("");
+      hostFile.disabled = false;
     }
     async function runCurrent() {
       if (!current || !view || running) return;
@@ -30347,7 +30606,7 @@ var require_app = __commonJS({
         await putFile(f);
         closeModal();
         await refreshList();
-        openFile(f.id);
+        openFile2(f.id);
         return;
       }
       if (modalMode === "rename") {
@@ -30442,9 +30701,14 @@ var require_app = __commonJS({
       e.target.value = "";
     });
     $("btn-back").addEventListener("click", async () => {
-      if (dirty) await saveCurrent(true);
+      if (dirty && isHostFile()) {
+        if (!confirm("\u0415\u0441\u0442\u044C \u043D\u0435\u0441\u043E\u0445\u0440\u0430\u043D\u0451\u043D\u043D\u044B\u0435 \u043F\u0440\u0430\u0432\u043A\u0438 \u043D\u0430 \u0441\u0435\u0440\u0432\u0435\u0440\u0435. \u0423\u0439\u0442\u0438?")) return;
+      } else if (dirty) {
+        await saveCurrent(true);
+      }
+      current = null;
       showView("list");
-      refreshList();
+      if (listMode === "local") refreshList();
     });
     $("btn-save").addEventListener("click", () => saveCurrent(false));
     $("btn-export").addEventListener("click", exportCurrent);
@@ -30461,6 +30725,28 @@ var require_app = __commonJS({
     });
     $("modal-cancel").addEventListener("click", closeModal);
     $("modal-ok").addEventListener("click", modalOk);
+    modeTabs.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-mode]");
+      if (btn) setListMode(btn.dataset.mode);
+    });
+    hostRes.addEventListener("change", () => loadHostFiles());
+    hostFile.addEventListener("change", () => {
+      $("btn-host-open").disabled = !hostFile.value;
+    });
+    $("btn-host-refresh").addEventListener("click", () => loadHostResources());
+    $("btn-host-open").addEventListener("click", () => {
+      if (hostRes.value && hostFile.value) openHostFile(hostRes.value, hostFile.value);
+    });
+    sheetBackdrop.addEventListener("click", closeSheet);
+    sheetEl.addEventListener("click", (e) => {
+      if (e.target.id === "sheet-ok") closeSheet();
+    });
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        saveCurrent(false);
+      }
+    });
     modalLang.addEventListener("change", () => {
       if (modalMode !== "create") return;
       const L = langById(modalLang.value);
@@ -30489,9 +30775,12 @@ var require_app = __commonJS({
       navigator.serviceWorker.register("./sw.js").catch(() => {
       });
     }
+    initTelegram();
     buildLangTabs();
     refreshList();
     showView("list");
+    if (hasHostAuth()) setListMode("host");
+    else setListMode("local");
   }
 });
 export default require_app();

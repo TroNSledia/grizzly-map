@@ -244,3 +244,45 @@ button:disabled { opacity: 0.45; cursor: default; }
 .install-banner.show { display: flex; }
 .install-banner p { margin: 0; flex: 1; font-size: 0.9rem; color: var(--muted); }
 .install-banner strong { color: var(--ink); }
+
+.mode-tabs {
+  display: flex; gap: 6px; padding: 8px var(--pad) 0;
+  flex-shrink: 0;
+}
+.mode-tabs button {
+  flex: 1; padding: 10px 12px; border-radius: 12px;
+  background: var(--bg-soft); color: var(--muted); font-weight: 600;
+}
+.mode-tabs button.active {
+  background: var(--accent); color: var(--accent-ink);
+}
+
+.host-bar {
+  display: flex; gap: 8px; padding: 10px var(--pad);
+  flex-shrink: 0;
+}
+.host-bar select {
+  flex: 1; min-width: 0; padding: 12px;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--ink);
+}
+
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+  max-height: 70vh; overflow: auto;
+  background: var(--bg-elev); border-top: 2px solid var(--accent);
+  border-radius: 16px 16px 0 0; padding: 16px;
+  transform: translateY(110%); transition: transform 0.18s ease;
+  padding-bottom: calc(16px + var(--safe-b));
+}
+.sheet.on { transform: none; }
+.sheet h3 { margin: 0 0 10px; font-size: 1.05rem; }
+.sheet .err { color: var(--danger); white-space: pre-wrap; font-family: var(--font-code); font-size: 12px; }
+.sheet .row { display: flex; gap: 8px; margin-top: 12px; }
+.sheet .row button { flex: 1; }
+.sheet label { display: flex; gap: 8px; align-items: center; margin-top: 12px; color: var(--muted); }
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 65; background: rgba(0,0,0,0.45);
+  display: none;
+}
+.sheet-backdrop.on { display: block; }

@@ -1,5 +1,5 @@
 /* Service worker: полный офлайн после первого визита (бандл без CDN для редактора) */
-const CACHE = "grizzly-edit-pages-v1";
+const CACHE = "grizzly-edit-pages-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -30,6 +30,7 @@ self.addEventListener("fetch", (event) => {
   const isCdn =
     url.hostname === "cdn.jsdelivr.net" ||
     url.hostname === "esm.sh" ||
+    url.hostname === "telegram.org" ||
     url.hostname.endsWith("pyodide.org");
 
   if (isCdn) {
