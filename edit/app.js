@@ -525,7 +525,12 @@ function renderPlace(intent, spec) {
   const blip = spec.blip || 41;
   const title = luaQuote(spec.title || intent.title);
   const closeY = 52 + offers.length * 40;
-  const height = closeY + 48;
+  const height = closeY + 56;
+  const leaveKey = spec.kind === "interior" || spec.kind === "teleport" ? `
+bindKey("f", "down", function()
+  triggerServerEvent("${id}:leave", resourceRoot)
+end)
+` : "";
   if (intent.side === "client") {
     return `local POS = { x = ${x}, y = ${y}, z = ${z} }
 local OFFERS = {
@@ -551,13 +556,14 @@ local function openUi()
   local sw, sh = guiGetScreenSize()
   window = guiCreateWindow((sw - 360) / 2, (sh - ${height}) / 2, 360, ${height}, ${title}, false)
   guiWindowSetSizable(window, false)
-  labelStatus = guiCreateLabel(16, 28, 328, 18, ${title}, false, window)
-  for _, offer in ipairs(OFFERS) do
-    local caption = offer.price > 0 and (offer.label .. "  $" .. offer.price) or offer.label
-    local btn = guiCreateButton(16, 48 + (_ - 1) * 40, 328, 34, caption, false, window)
+  labelStatus = guiCreateLabel(16, 28, 328, 18, "\u0412\u044B\u0431\u0435\u0440\u0438 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435", false, window)
+  for index, offer in ipairs(OFFERS) do
+    local picked = offer
+    local caption = picked.price > 0 and (picked.label .. "  $" .. picked.price) or picked.label
+    local btn = guiCreateButton(16, 48 + (index - 1) * 40, 328, 34, caption, false, window)
     addEventHandler("onClientGUIClick", btn, function()
       setStatus("\u0417\u0430\u043F\u0440\u043E\u0441\u2026")
-      triggerServerEvent("${id}:use", resourceRoot, offer.id)
+      triggerServerEvent("${id}:use", resourceRoot, picked.id)
     end, false)
   end
   local closeBtn = guiCreateButton(16, ${closeY}, 328, 32, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
@@ -583,7 +589,8 @@ addEventHandler("onClientRender", root, function()
   if getDistanceBetweenPoints3D(px, py, pz, mx, my, mz) > 12 then return end
   local sx, sy = getScreenFromWorldPosition(mx, my, mz + 1.1)
   if not sx then return end
-  dxDrawText(${title}, sx - 90, sy, sx + 90, sy + 20, tocolor(255, 255, 255, 230), 1, "default-bold", "center")
+  dxDrawText(${title}, sx - 90, sy, sx + 90, sy + 20,
+    tocolor(255, 255, 255, 230), 1, "default-bold", "center")
 end)
 
 addEventHandler("onClientResourceStop", resourceRoot, function()
@@ -595,14 +602,13 @@ end)
 bindKey("backspace", "down", function()
   if isElement(window) then closeUi() end
 end)
-
-bindKey("f", "down", function()
-  triggerServerEvent("${id}:leave", resourceRoot)
-end)
-
+${leaveKey}
 addEvent("${id}:result", true)
 addEventHandler("${id}:result", resourceRoot, function(ok, message)
-  outputChatBox("[" .. ${title} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+  local text = "[" .. ${title} .. "] " .. tostring(message or "")
+  local red = ok and 90 or 255
+  local green = ok and 200 or 90
+  outputChatBox(text, red, green, 90)
   setStatus(tostring(message or ""))
 end)
 `;
@@ -749,10 +755,8 @@ function mtaStarter(intent) {
   const title = intent.title;
   const display = intent.spec && intent.spec.title || title;
   const q = luaQuote(display);
-  const other = intent.side === "client" ? "server" : "client";
   const head = `-- ${display} / ${intent.side}
 -- \u041F\u0440\u0438\u043C\u0435\u0440 ${intent.side === "client" ? "\u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u043E\u0439" : "\u0441\u0435\u0440\u0432\u0435\u0440\u043D\u043E\u0439"} \u0447\u0430\u0441\u0442\u0438 \u0434\u043B\u044F MTA.
--- \u041F\u0430\u0440\u0430: ${id} "${other}"
 `;
   if (intent.spec && intent.spec.kind !== "bank") {
     const body = renderPlace(intent, intent.spec);
@@ -31776,7 +31780,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=15", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=16", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();

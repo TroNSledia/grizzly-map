@@ -1,6 +1,6 @@
 ﻿/* Service worker: сеть без HTTP-кэша, чтобы телефон не оставлял старые вкладки языков. */
-const CACHE = "grizzly-edit-pages-v15";
-const BUILD = "15";
+const CACHE = "grizzly-edit-pages-v16";
+const BUILD = "16";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
