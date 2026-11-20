@@ -32151,6 +32151,7 @@ var require_app = __commonJS({
     }
     function exportCurrent() {
       if (!current || !view) return;
+      if (window.gzExport) return window.gzExport(current.name, view.state.doc.toString());   // меню «куда» — server-send.js
       const blob = new Blob([view.state.doc.toString()], { type: "text/plain;charset=utf-8" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -32335,7 +32336,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=23", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=24", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();

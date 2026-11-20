@@ -149,6 +149,71 @@
   $("gzs-cancel").addEventListener("click", function () { back.classList.remove("show"); });
   back.addEventListener("click", function (e) { if (e.target === back) back.classList.remove("show"); });
 
+  // ---------------------------------------------------------------- «Экспорт»: меню «куда сохранить»
+  var ex = document.createElement("div");
+  ex.id = "gzx-back";
+  ex.innerHTML = '<div id="gzx"><h2>Экспорт: <span id="gzx-name"></span></h2><div id="gzx-list"></div>' +
+    '<div class="msg" id="gzx-msg"></div><div class="row"><button id="gzx-close">Закрыть</button></div></div>';
+  document.body.appendChild(ex);
+  var css2 = document.createElement("style");
+  css2.textContent = "#gzx-back{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;display:none;align-items:flex-end;justify-content:center}" +
+    "#gzx-back.show{display:flex}#gzx{width:100%;max-width:560px;background:#16181b;color:#eee;border-top:2px solid #ff8a00;border-radius:14px 14px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));font:15px system-ui,sans-serif}" +
+    "#gzx h2{margin:0 0 12px;font-size:17px;color:#ff8a00;word-break:break-all}#gzx-list button{display:block;width:100%;text-align:left;margin:0 0 8px;background:#25282c;color:#eee;border:0;border-radius:10px;padding:14px;font-size:15px}" +
+    "#gzx-list small{display:block;color:#999;font-size:12px;margin-top:3px}#gzx .row{display:flex;margin-top:6px}#gzx .row button{flex:1;background:#25282c;color:#eee;border:0;border-radius:8px;padding:12px}" +
+    "#gzx .msg{margin:6px 0;white-space:pre-wrap;font-size:14px;min-height:0}#gzx .msg.err{color:#ff7b7b}#gzx .msg.ok{color:#7be08a}";
+  document.head.appendChild(css2);
+  var exMsg = document.getElementById("gzx-msg");
+  function exSay(t, k) { exMsg.textContent = t; exMsg.className = "msg" + (k ? " " + k : ""); }
+  function blobOf(text) { return new Blob([text], { type: "text/plain;charset=utf-8" }); }
+  function download(name, text) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blobOf(text)); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+
+  window.gzExport = function (name, text) {
+    var list = document.getElementById("gzx-list");
+    document.getElementById("gzx-name").textContent = name;
+    list.innerHTML = ""; exSay("");
+    function opt(title, sub, fn) {
+      var b = document.createElement("button");
+      b.innerHTML = title + (sub ? "<small>" + sub + "</small>" : "");
+      b.addEventListener("click", async function () {
+        try { await fn(); } catch (e) { if (e && e.name === "AbortError") return; exSay("❌ " + (e && e.message || e), "err"); }
+      });
+      list.appendChild(b);
+    }
+    // 1) ПК / Chrome: выбрать папку и имя
+    if (window.showSaveFilePicker) opt("📁 Выбрать папку и сохранить…", "Откроется окно сохранения", async function () {
+      var h = await window.showSaveFilePicker({ suggestedName: name });
+      var w = await h.createWritable(); await w.write(blobOf(text)); await w.close();
+      exSay("✅ Сохранено: " + h.name, "ok");
+    });
+    // 2) Android / iPhone: системное «Поделиться» — Telegram, Диск, Файлы, почта…
+    var file = null;
+    try { file = new File([text], name, { type: "text/plain" }); } catch (e) {}
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) opt("📤 Поделиться / сохранить в…", "Telegram, Google Диск, «Файлы», почта — выберешь в списке", async function () {
+      await navigator.share({ files: [file], title: name });
+      exSay("✅ Готово", "ok");
+    });
+    // 3) открыт из бота: файл придёт сообщением в чат с ботом — оттуда сохранить или переслать куда угодно
+    if (initData()) opt("💬 Прислать файлом в чат с ботом", "Потом в Telegram: ⋮ → «Сохранить в загрузки» или «Переслать»", async function () {
+      exSay("Отправляю…");
+      var d = await call({ a: "ed_export", name: name, text: parts(text) });
+      if (!d.ok) return exSay("❌ " + (d.err || "Ошибка"), "err");
+      exSay("✅ Файл отправлен в чат с ботом", "ok");
+      if (tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred("success");
+    });
+    // 4) обычное скачивание
+    opt("⬇️ В «Загрузки»", initData() ? "Внутри Telegram может не сработать — тогда выбери «Прислать в чат с ботом»" : "Папка Download на телефоне", function () {
+      download(name, text);
+      exSay("Скачивание запущено — смотри уведомление или папку «Загрузки»", "ok");
+    });
+    ex.classList.add("show");
+  };
+  document.getElementById("gzx-close").addEventListener("click", function () { ex.classList.remove("show"); });
+  ex.addEventListener("click", function (e) { if (e.target === ex) ex.classList.remove("show"); });
+
   // кнопка в нижней панели редактора
   function addButton() {
     var save = document.getElementById("btn-save");
