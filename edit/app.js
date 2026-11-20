@@ -204,13 +204,279 @@ async function loadLuaEngine() {
   }
   return luaFactory.createEngine();
 }
+function luaString(value) {
+  return '"' + String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ") + '"';
+}
+function mtaProbe(source) {
+  const events = firstStringArg(source, "addEvent");
+  const offers = [];
+  const re = /\bid\s*=\s*"([^"]+)"/g;
+  let match;
+  while ((match = re.exec(source))) offers.push(match[1]);
+  const lines = [
+    'if handlers["onResourceStart"] then fire("onResourceStart", resourceRoot) end',
+    'if handlers["onClientResourceStart"] then fire("onClientResourceStart", resourceRoot) end'
+  ];
+  for (const name of events) {
+    if (/:result$/.test(name)) continue;
+    let arg = "";
+    if (/deposit|withdraw/.test(name)) arg = ", 1000";
+    else if (/:(use|buy|spawn|toggle|enter)$/.test(name)) arg = ", " + luaString(offers[0] || "1");
+    lines.push(`fire(${luaString(name)}${arg})`);
+  }
+  return lines.join("\n");
+}
+const MTA_PRELUDE = `
+handlers = {}
+playerMoney = {}
+accountData = {}
+elementData = {}
+local nextId = 1
+local function element(kind)
+  local el = { __kind = kind, __id = nextId }
+  nextId = nextId + 1
+  return el
+end
+root = element("root")
+resourceRoot = element("resource")
+localPlayer = element("player")
+playerMoney[localPlayer.__id] = 100000
+client = nil
+source = nil
+function isElement(el)
+  return type(el) == "table" and el.__kind ~= nil
+end
+function getElementType(el)
+  if isElement(el) then return el.__kind end
+  return false
+end
+function addEvent()
+  return true
+end
+function addEventHandler(name, _, fn)
+  if type(fn) ~= "function" then return false end
+  handlers[name] = handlers[name] or {}
+  handlers[name][#handlers[name] + 1] = fn
+  return true
+end
+function fire(name, ...)
+  local list = handlers[name]
+  if not list then return end
+  client = localPlayer
+  source = resourceRoot
+  for i = 1, #list do
+    local ok, err = pcall(list[i], ...)
+    if not ok then print("Ошибка " .. tostring(name) .. ": " .. tostring(err)) end
+  end
+end
+function triggerClientEvent(a, b, _, okFlag, message)
+  local name = type(a) == "string" and a or b
+  local text = "→ клиенту " .. tostring(name)
+  if type(okFlag) == "boolean" then text = text .. (okFlag and " · да" or " · нет") end
+  if message and message ~= "" then text = text .. " · " .. tostring(message) end
+  print(text)
+  return true
+end
+function triggerServerEvent(name)
+  print("→ серверу " .. tostring(name))
+  return true
+end
+function outputChatBox(text)
+  print("чат: " .. tostring(text))
+  return true
+end
+function outputServerLog(text)
+  print("лог: " .. tostring(text))
+  return true
+end
+function getPlayerMoney(player)
+  local id = type(player) == "table" and player.__id or 0
+  if playerMoney[id] == nil then playerMoney[id] = 100000 end
+  return playerMoney[id]
+end
+function givePlayerMoney(player, amount)
+  local id = type(player) == "table" and player.__id or 0
+  playerMoney[id] = (getPlayerMoney(player) or 0) + (tonumber(amount) or 0)
+  return true
+end
+function takePlayerMoney(player, amount)
+  local id = type(player) == "table" and player.__id or 0
+  playerMoney[id] = (getPlayerMoney(player) or 0) - (tonumber(amount) or 0)
+  return true
+end
+function getPlayerAccount(player)
+  return { name = "sandbox", guest = false, id = type(player) == "table" and player.__id or 0 }
+end
+function isGuestAccount(account)
+  return not account or account.guest
+end
+function getAccountData(account, key)
+  return accountData[tostring(account and account.name) .. ":" .. tostring(key)]
+end
+function setAccountData(account, key, value)
+  accountData[tostring(account and account.name) .. ":" .. tostring(key)] = value
+  return true
+end
+function getPlayerSerial()
+  return "sandbox"
+end
+function getPlayerName()
+  return "Sandbox"
+end
+function getElementPosition()
+  return 0, 0, 0
+end
+function getDistanceBetweenPoints3D()
+  return 0
+end
+function isPedDead()
+  return false
+end
+function isPedInVehicle()
+  return false
+end
+function getPedOccupiedVehicle()
+  return false
+end
+function getElementRotation()
+  return 0, 0, 0
+end
+function getElementInterior()
+  return 0
+end
+function getElementDimension()
+  return 0
+end
+function getElementModel()
+  return 0
+end
+function getElementHealth()
+  return 100
+end
+function setElementPosition()
+  return true
+end
+function setElementInterior()
+  return true
+end
+function setElementDimension()
+  return true
+end
+function setElementHealth()
+  return true
+end
+function setElementData(el, key, value)
+  local id = type(el) == "table" and el.__id or 0
+  elementData[tostring(id) .. ":" .. tostring(key)] = value
+  return true
+end
+function getElementData(el, key)
+  local id = type(el) == "table" and el.__id or 0
+  return elementData[tostring(id) .. ":" .. tostring(key)]
+end
+function createMarker()
+  return element("marker")
+end
+function createBlip()
+  return element("blip")
+end
+function createVehicle()
+  return element("vehicle")
+end
+function destroyElement()
+  return true
+end
+function warpPedIntoVehicle()
+  return true
+end
+function spawnPlayer()
+  return true
+end
+function giveWeapon()
+  return true
+end
+function fixVehicle()
+  return true
+end
+function setVehicleColor()
+  return true
+end
+function cancelEvent()
+  return true
+end
+function bindKey()
+  return true
+end
+function showCursor()
+  return true
+end
+function guiSetInputEnabled()
+  return true
+end
+function guiCreateWindow()
+  return element("gui")
+end
+function guiCreateButton()
+  return element("gui")
+end
+function guiCreateLabel()
+  return element("gui")
+end
+function guiCreateEdit()
+  return element("gui")
+end
+function guiSetText()
+  return true
+end
+function guiGetText()
+  return "1000"
+end
+function guiWindowSetSizable()
+  return true
+end
+function guiLabelSetHorizontalAlign()
+  return true
+end
+function getScreenFromWorldPosition()
+  return 0, 0
+end
+function dxDrawText()
+  return true
+end
+function guiGetScreenSize()
+  return 800, 600
+end
+function tocolor()
+  return 0
+end
+local missing = {}
+setmetatable(_G, {
+  __index = function(_, key)
+    if not missing[key] then
+      missing[key] = true
+      print("Нет функции MTA " .. tostring(key) .. ", вызов пропущен")
+    end
+    local stub = function()
+      return true
+    end
+    rawset(_G, key, stub)
+    return stub
+  end
+})
+`;
 async function runLua(source, logger) {
   const engine = await loadLuaEngine();
   try {
     engine.global.set("print", (...args) => {
       logger.log(args.map((a) => a === null || a === void 0 ? "nil" : String(a)).join("	"));
     });
+    const mta = /\b(addEvent|addEventHandler|createMarker|triggerServerEvent|triggerClientEvent)\s*\(/.test(source);
+    if (mta) {
+      logger.log("\u041F\u0435\u0441\u043E\u0447\u043D\u0438\u0446\u0430 MTA: \u0438\u0433\u0440\u043E\u043A\u0430 \u043D\u0435\u0442, \u0434\u0438\u0441\u0442\u0430\u043D\u0446\u0438\u044F 0, \u043D\u0430\u043B\u0438\u0447\u043D\u044B\u0435 $100000.");
+      await engine.doString(MTA_PRELUDE);
+    }
     await engine.doString(source);
+    if (mta) await engine.doString(mtaProbe(source));
   } finally {
     engine.global.close();
   }
@@ -32040,7 +32306,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=21", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=22", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
