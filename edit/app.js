@@ -514,6 +514,99 @@ function dimOfTopic(topic) {
   for (const ch of String(topic || "")) h = (h + ch.charCodeAt(0)) % 50;
   return 20 + h;
 }
+function renderVehicleShop(id, x, y, z, offers, kind) {
+  const rows = offers.map((o) => {
+    return `  { id = ${luaQuote(o.id)}, label = ${luaQuote(o.label)}, price = ${o.price | 0}, model = ${o.model | 0} }`;
+  }).join(",\n");
+  const bought = kind === "rental" ? "\u0410\u0440\u0435\u043D\u0434\u043E\u0432\u0430\u043D" : "\u041A\u0443\u043F\u043B\u0435\u043D";
+  return `local POS = { x = ${x}, y = ${y}, z = ${z} }
+local RANGE = 6
+local OWNER_KEY = "${id}.owner"
+local OFFERS = {
+${rows}
+}
+local owned = {}
+
+local function findOffer(offerId)
+  for _, offer in ipairs(OFFERS) do
+    if offer.id == offerId then return offer end
+  end
+end
+
+local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+local function nearPlace(player)
+  local px, py, pz = getElementPosition(player)
+  local dist = getDistanceBetweenPoints3D(px, py, pz, POS.x, POS.y, POS.z)
+  return dist <= RANGE
+end
+
+local function playerOf()
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then
+    return nil
+  end
+  if isPedDead(player) then
+    reply(player, false, "\u0422\u044B \u0431\u0435\u0437 \u0441\u043E\u0437\u043D\u0430\u043D\u0438\u044F")
+    return nil
+  end
+  if not nearPlace(player) then
+    reply(player, false, "\u041F\u043E\u0434\u043E\u0439\u0434\u0438 \u043A \u043C\u0435\u0441\u0442\u0443")
+    return nil
+  end
+  return player
+end
+
+local function parkVehicle(player, offer)
+  if isElement(owned[player]) then destroyElement(owned[player]) end
+  local model = offer.model > 0 and offer.model or 560
+  local veh = createVehicle(model, POS.x + 4, POS.y + 2, POS.z + 0.6, 0, 0, 90)
+  if not veh then return nil end
+  setElementData(veh, OWNER_KEY, player)
+  owned[player] = veh
+  warpPedIntoVehicle(player, veh)
+  return veh
+end
+
+addEvent("${id}:use", true)
+addEventHandler("${id}:use", resourceRoot, function(offerId)
+  local player = playerOf()
+  if not player then return end
+  local offer = findOffer(offerId)
+  if not offer then return reply(player, false, "\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0439 \u043C\u0430\u0448\u0438\u043D\u044B") end
+  local price = offer.price or 0
+  if price > 0 and (getPlayerMoney(player) or 0) < price then
+    return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0434\u0435\u043D\u0435\u0433")
+  end
+  local veh = parkVehicle(player, offer)
+  if not veh then return reply(player, false, "\u041D\u0435 \u0443\u0434\u0430\u043B\u043E\u0441\u044C \u0432\u044B\u0434\u0430\u0442\u044C \u043C\u0430\u0448\u0438\u043D\u0443") end
+  if price > 0 then takePlayerMoney(player, price) end
+  reply(player, true, "${bought} " .. offer.label .. " \u0437\u0430 $" .. price)
+end)
+
+addEventHandler("onVehicleStartEnter", root, function(player, seat)
+  if seat ~= 0 then return end
+  local owner = getElementData(source, OWNER_KEY)
+  if owner and owner ~= player then
+    cancelEvent()
+    reply(player, false, "\u042D\u0442\u043E \u0447\u0443\u0436\u0430\u044F \u043C\u0430\u0448\u0438\u043D\u0430")
+  end
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  if isElement(owned[source]) then destroyElement(owned[source]) end
+  owned[source] = nil
+end)
+
+addEventHandler("onResourceStop", resourceRoot, function()
+  for _, veh in pairs(owned) do
+    if isElement(veh) then destroyElement(veh) end
+  end
+end)
+`;
+}
 function renderPlace(intent, spec) {
   const id = intent.slug;
   const offers = offersFor(spec);
@@ -610,8 +703,12 @@ addEventHandler("${id}:result", resourceRoot, function(ok, message)
   local green = ok and 200 or 90
   outputChatBox(text, red, green, 90)
   setStatus(tostring(message or ""))
+  if ok then closeUi() end
 end)
 `;
+  }
+  if (spec.kind === "dealer" || spec.kind === "rental") {
+    return renderVehicleShop(id, x, y, z, offers, spec.kind);
   }
   return `local POS = { x = ${x}, y = ${y}, z = ${z} }
 local DEST = { x = ${dest[0]}, y = ${dest[1]}, z = ${dest[2]}, int = ${dest[3] || 0}, dim = ${dest[4] || 0} }
@@ -640,9 +737,12 @@ end
 local function playerOf()
   local player = client
   if not isElement(player) or getElementType(player) ~= "player" then return nil end
-  if isPedDead(player) and not nearPlace(player) then return nil end
+  if isPedDead(player) then
+    reply(player, false, "\u0422\u044B \u0431\u0435\u0437 \u0441\u043E\u0437\u043D\u0430\u043D\u0438\u044F")
+    return nil
+  end
   if not nearPlace(player) then
-    reply(player, false, "\u041F\u043E\u0434\u043E\u0439\u0434\u0438 \u043A \u043C\u0435\u0442\u0443")
+    reply(player, false, "\u041F\u043E\u0434\u043E\u0439\u0434\u0438 \u043A \u043C\u0435\u0441\u0442\u0443")
     return nil
   end
   return player
@@ -714,7 +814,11 @@ addEventHandler("${id}:use", resourceRoot, function(offerId)
   elseif effect == "enter" then
     if inside[player] then return reply(player, false, "\u0422\u044B \u0443\u0436\u0435 \u0432\u043D\u0443\u0442\u0440\u0438") end
     local px, py, pz = getElementPosition(player)
-    outside[player] = { x = px, y = py, z = pz, int = getElementInterior(player), dim = getElementDimension(player) }
+    outside[player] = {
+      x = px, y = py, z = pz,
+      int = getElementInterior(player),
+      dim = getElementDimension(player)
+    }
     setElementInterior(player, DEST.int)
     setElementDimension(player, DEST.dim)
     setElementPosition(player, DEST.x, DEST.y, DEST.z)
@@ -742,7 +846,10 @@ end)
 
 addEventHandler("onPlayerQuit", root, function()
   if isElement(spawned[source]) then destroyElement(spawned[source]) end
-  spawned[source], outside[source], inside[source], workers[source] = nil, nil, nil, nil
+  spawned[source] = nil
+  outside[source] = nil
+  inside[source] = nil
+  workers[source] = nil
 end)
 
 addEventHandler("onPlayerWasted", root, function()
@@ -31780,7 +31887,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=16", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=17", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
