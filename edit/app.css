@@ -136,6 +136,7 @@ button:disabled { opacity: 0.45; cursor: default; }
   border-color: transparent;
 }
 .lang-tabs button.active span { opacity: 1; }
+.lang-tabs.langs { padding-top: 0; }
 
 /* Editor */
 #editor-host {

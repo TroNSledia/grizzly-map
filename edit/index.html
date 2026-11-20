@@ -11,7 +11,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="app.css?v=14" />
+  <link rel="stylesheet" href="app.css?v=15" />
   <script>
     (function () {
       if (!("serviceWorker" in navigator)) return;
@@ -21,7 +21,7 @@
         reloaded = true;
         location.reload();
       });
-      navigator.serviceWorker.register("./sw.js?b=14", { updateViaCache: "none" }).catch(function () {});
+      navigator.serviceWorker.register("./sw.js?b=15", { updateViaCache: "none" }).catch(function () {});
     })();
   </script>
 </head>
@@ -57,6 +57,7 @@
       <button type="button" data-file="server.lua">server.lua</button>
       <button type="button" data-file="meta.xml">meta.xml</button>
     </div>
+    <div class="lang-tabs langs" id="lang-switch" role="tablist" aria-label="Язык"></div>
     <div id="editor-host"></div>
     <div class="out-panel" id="out-panel">
       <div class="out-head">
@@ -79,7 +80,7 @@
     <div class="modal" role="dialog" aria-modal="true">
       <h2 id="modal-title">Файл</h2>
       <p class="hint" id="modal-hint"></p>
-      <select id="modal-lang" aria-label="Язык" hidden></select>
+      <select id="modal-lang" aria-label="Язык"></select>
       <input id="modal-input" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
       <div class="row">
         <button type="button" id="modal-cancel">Отмена</button>
@@ -93,6 +94,6 @@
   <div class="toast" id="toast"></div>
   <input id="file-input" type="file" multiple hidden accept=".lua,.js,.ts,.tsx,.jsx,.mjs,.cjs,.py,.css,.html,.htm,.json,.md,.txt,.xml,.sql,.sh" />
 
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=15"></script>
 </body>
 </html>

@@ -31171,6 +31171,7 @@ var require_app = __commonJS({
     var outPreview = $("out-preview");
     var btnRun = $("btn-run");
     var langTabs = $("lang-tabs");
+    var langSwitch = $("lang-switch");
     var files = [];
     var current = null;
     var dirty = false;
@@ -31218,9 +31219,16 @@ var require_app = __commonJS({
     }
     function syncLangTabs() {
       const active = current ? current.name : "";
+      const ext = current ? extOf(current.name) : "";
+      const lang = LANGS.find((L) => L.ext === ext);
       langTabs.querySelectorAll("button").forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.file === active);
       });
+      if (langSwitch) {
+        langSwitch.querySelectorAll("button").forEach((btn) => {
+          btn.classList.toggle("active", !!lang && btn.dataset.lang === lang.id);
+        });
+      }
     }
     function updateRunButton() {
       if (!current) {
@@ -31468,11 +31476,11 @@ var require_app = __commonJS({
       modal.classList.add("show");
       const showName = mode !== "confirm-delete";
       modalInput.style.display = showName ? "block" : "none";
-      modalLang.style.display = "none";
+      modalLang.style.display = mode === "create" ? "block" : "none";
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "\u0411\u0443\u0434\u0443\u0442 client.lua, server.lua \u0438 meta.xml. \u041C\u043E\u0436\u043D\u043E \u0443\u043A\u0430\u0437\u0430\u0442\u044C \u043C\u0435\u0441\u0442\u043E: auction, \u0431\u0430\u043D\u043A, \u0431\u043E\u043B\u044C\u043D\u0438\u0446\u0430.";
+        modalHint.textContent = "Lua \u0441\u043E\u0437\u0434\u0430\u0451\u0442 client.lua, server.lua \u0438 meta.xml. JavaScript, Python \u0438 \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u2014 \u043E\u0434\u0438\u043D \u0444\u0430\u0439\u043B.";
         fillModalLang("lua");
         modalInput.value = "";
         modalInput.placeholder = "\u0430\u0443\u043A\u0446\u0438\u043E\u043D, \u0431\u0430\u043D\u043A, \u0431\u043E\u043B\u044C\u043D\u0438\u0446\u0430";
@@ -31514,14 +31522,41 @@ var require_app = __commonJS({
         return;
       }
       if (modalMode === "create") {
+        const L = langById(modalLang.value);
         const word = String(modalInput.value || "").trim().replace(/\.[A-Za-z0-9]+$/, "").replace(/[\\/:*?"<>|]/g, " ").trim();
-        const client = await writeRoleFile("client.lua", roleContent("client.lua", word));
-        await writeRoleFile("server.lua", roleContent("server.lua", word));
-        await writeRoleFile("meta.xml", roleContent("meta.xml", word));
+        if (L.ext === "lua") {
+          const client = await writeRoleFile("client.lua", roleContent("client.lua", word));
+          await writeRoleFile("server.lua", roleContent("server.lua", word));
+          await writeRoleFile("meta.xml", roleContent("meta.xml", word));
+          closeModal();
+          await refreshList();
+          openFile2(client.id);
+          toast("client.lua, server.lua, meta.xml");
+          return;
+        }
+        const raw = (word || "untitled").replace(/\s+/g, "_");
+        const name2 = sanitizeName(withExt(raw, L.ext));
+        if (!name2) {
+          toast("\u0412\u0432\u0435\u0434\u0438 \u0438\u043C\u044F \u0444\u0430\u0439\u043B\u0430");
+          return;
+        }
+        if (await getByName(name2)) {
+          toast("\u0422\u0430\u043A\u043E\u0439 \u0444\u0430\u0439\u043B \u0443\u0436\u0435 \u0435\u0441\u0442\u044C");
+          return;
+        }
+        const now = Date.now();
+        const intent = word ? intentFromName(word) : null;
+        const f = {
+          id: newId(),
+          name: name2,
+          content: starterFor(name2, intent),
+          createdAt: now,
+          updatedAt: now
+        };
+        await putFile(f);
         closeModal();
         await refreshList();
-        openFile2(client.id);
-        toast("client.lua, server.lua, meta.xml");
+        openFile2(f.id);
         return;
       }
       if (modalMode === "rename") {
@@ -31632,16 +31667,50 @@ var require_app = __commonJS({
       }
       await openFile2(row.id);
     }
+    const ROLE_FILES = ["client.lua", "server.lua", "meta.xml"];
+    async function openLanguage(langId) {
+      const L = langById(langId);
+      const role = current && ROLE_FILES.indexOf(current.name) !== -1;
+      if (current && !role) {
+        await setLanguage(langId);
+        return;
+      }
+      if (L.ext === "lua") {
+        await openRole("client.lua");
+        return;
+      }
+      const name = "script." + L.ext;
+      if (dirty) await saveCurrent(true);
+      let row = await getByName(name);
+      if (!row) {
+        const now = Date.now();
+        row = { id: newId(), name, content: starterFor(name, null), createdAt: now, updatedAt: now };
+        await putFile(row);
+        await refreshList();
+      }
+      await openFile2(row.id);
+    }
     function buildLangTabs() {
-      if (!langTabs) return;
-      langTabs.innerHTML = "";
-      for (const name of ["client.lua", "server.lua", "meta.xml"]) {
+      if (langTabs) {
+        langTabs.innerHTML = "";
+        for (const name of ROLE_FILES) {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.dataset.file = name;
+          btn.textContent = name;
+          btn.addEventListener("click", () => openRole(name));
+          langTabs.appendChild(btn);
+        }
+      }
+      if (!langSwitch) return;
+      langSwitch.innerHTML = "";
+      for (const L of LANGS) {
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.dataset.file = name;
-        btn.textContent = name;
-        btn.addEventListener("click", () => openRole(name));
-        langTabs.appendChild(btn);
+        btn.dataset.lang = L.id;
+        btn.innerHTML = L.label + "<span>." + L.ext + "</span>";
+        btn.addEventListener("click", () => openLanguage(L.id));
+        langSwitch.appendChild(btn);
       }
     }
     $("btn-new").addEventListener("click", () => openModal("create"));
@@ -31680,9 +31749,14 @@ var require_app = __commonJS({
     modalLang.addEventListener("change", () => {
       if (modalMode !== "create") return;
       const L = langById(modalLang.value);
-      const base2 = String(modalInput.value || "untitled").replace(/\.[A-Za-z0-9]+$/, "") || "untitled";
-      modalInput.value = base2 + "." + L.ext;
-      modalHint.textContent = "\u0424\u0430\u0439\u043B \u0431\u0443\u0434\u0435\u0442 \u0441 \u0440\u0430\u0441\u0448\u0438\u0440\u0435\u043D\u0438\u0435\u043C ." + L.ext;
+      const base2 = String(modalInput.value || "").replace(/\.[A-Za-z0-9]+$/, "").trim();
+      if (L.ext === "lua") {
+        modalInput.value = base2;
+        modalHint.textContent = "Lua \u0441\u043E\u0437\u0434\u0430\u0451\u0442 client.lua, server.lua \u0438 meta.xml. \u041C\u043E\u0436\u043D\u043E \u0443\u043A\u0430\u0437\u0430\u0442\u044C \u043C\u0435\u0441\u0442\u043E.";
+        return;
+      }
+      modalInput.value = (base2 || "untitled") + "." + L.ext;
+      modalHint.textContent = "\u041E\u0434\u0438\u043D \u0444\u0430\u0439\u043B ." + L.ext;
     });
     modalInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") modalOk();
@@ -31702,7 +31776,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=14", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=15", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
