@@ -307,7 +307,7 @@ function sideOf(word) {
 function asciiSlug(name) {
   let s = "";
   for (const ch of String(name || "").toLowerCase()) {
-    if (RU_SLUG[ch]) s += RU_SLUG[ch];
+    if (Object.prototype.hasOwnProperty.call(RU_SLUG, ch)) s += RU_SLUG[ch];
     else if (/[a-z0-9]/.test(ch)) s += ch;
     else s += "_";
   }
@@ -330,32 +330,434 @@ function parseScriptIntent(raw) {
   if (!side) return null;
   const title = (text.slice(0, hit.index) + " " + text.slice(hit.index + hit[0].length)).replace(/['"\u00AB\u00BB\u201C\u201D\u201E]/g, " ").replace(/[_\-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 48);
   const slug = asciiSlug(title);
-  const topic = scriptTopic(title + " " + text);
+  const spec = lookupScript(title + " " + text);
   return {
     side,
     slug,
-    title: title || slug,
-    topic
+    title: title || (spec && spec.title) || slug,
+    topic: spec ? spec.topic : "generic",
+    spec
   };
 }
+function scriptEntry(topic, kind, title, x, y, z, blip, price, en, ru, extra) {
+  return {
+    topic,
+    kind,
+    title,
+    pos: [x, y, z],
+    blip,
+    price,
+    words: en.concat(ru || []),
+    en,
+    extra: extra || null
+  };
+}
+var WORD_BOOK = [
+  scriptEntry("bank", "bank", "\u0411\u0430\u043D\u043A", 1481, -1767, 18.8, 52, 0, ["bank", "atm", "credit", "vault", "finance", "deposit"], ["\u0431\u0430\u043D\u043A", "\u0431\u0430\u043D\u043A\u043E\u043C\u0430\u0442", "\u043A\u0440\u0435\u0434\u0438\u0442"]),
+  scriptEntry("cityhall", "documents", "\u041C\u044D\u0440\u0438\u044F", 1481, -1748, 15.4, 33, 500, ["cityhall", "mayor", "municipality", "government", "passport", "license", "document", "city"], ["\u043C\u044D\u0440\u0438\u044F", "\u043C\u044D\u0440", "\u043F\u0430\u0441\u043F\u043E\u0440\u0442", "\u043B\u0438\u0446\u0435\u043D\u0437\u0438\u044F", "\u0434\u043E\u043A\u0443\u043C\u0435\u043D\u0442"]),
+  scriptEntry("rental", "rental", "\u0410\u0440\u0435\u043D\u0434\u0430 \u0430\u0432\u0442\u043E", 1684, -2240, 13.5, 55, 400, ["rental", "rent", "lease", "hire", "carrental"], ["\u0430\u0440\u0435\u043D\u0434\u0430 \u0430\u0432\u0442\u043E", "\u0430\u0440\u0435\u043D\u0434\u0430", "\u043F\u0440\u043E\u043A\u0430\u0442"]),
+  scriptEntry("dealer", "dealer", "\u0410\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D", 2131, -1150, 24, 55, 35000, ["dealership", "carshop", "showroom", "autosalon", "motors"], ["\u0430\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D", "\u0441\u0430\u043B\u043E\u043D"]),
+  scriptEntry("hospital", "heal", "\u0411\u043E\u043B\u044C\u043D\u0438\u0446\u0430", 1172, -1323, 15.4, 22, 200, ["hospital", "clinic", "ambulance", "medic", "doctor", "heal", "ems"], ["\u0431\u043E\u043B\u044C\u043D\u0438\u0446\u0430", "\u043A\u043B\u0438\u043D\u0438\u043A\u0430", "\u043C\u0435\u0434\u0438\u043A", "\u0441\u043A\u043E\u0440\u0430\u044F"]),
+  scriptEntry("police", "duty", "\u041F\u043E\u043B\u0438\u0446\u0438\u044F", 1554, -1675, 16.2, 30, 0, ["police", "cop", "sheriff", "lspd"], ["\u043F\u043E\u043B\u0438\u0446\u0438\u044F", "\u0448\u0435\u0440\u0438\u0444"]),
+  scriptEntry("shop", "shop", "\u041C\u0430\u0433\u0430\u0437\u0438\u043D", 1832, -1842, 13.6, 17, 50, ["shop", "store", "market", "kiosk", "supermarket", "mall"], ["\u043C\u0430\u0433\u0430\u0437\u0438\u043D", "\u0440\u044B\u043D\u043E\u043A", "\u043B\u0430\u0440\u0451\u043A", "\u043B\u0430\u0440\u0435\u043A"]),
+  scriptEntry("fuel", "fuel", "\u0417\u0430\u043F\u0440\u0430\u0432\u043A\u0430", 1944, -1772, 13.6, 43, 80, ["fuel", "gas", "petrol", "gasoline"], ["\u0437\u0430\u043F\u0440\u0430\u0432\u043A\u0430", "\u0431\u0435\u043D\u0437\u0438\u043D", "\u0442\u043E\u043F\u043B\u0438\u0432\u043E"]),
+  scriptEntry("job", "job", "\u0420\u0430\u0431\u043E\u0442\u0430", -382, -1438, 26, 56, 250, ["job", "work", "shift", "paycheck", "salary"], ["\u0440\u0430\u0431\u043E\u0442\u0430", "\u0441\u043C\u0435\u043D\u0430"]),
+  scriptEntry("house", "interior", "\u0414\u043E\u043C", 2495, -1690, 14.8, 31, 0, ["house", "home", "apartment", "flat", "villa"], ["\u0434\u043E\u043C", "\u043A\u0432\u0430\u0440\u0442\u0438\u0440\u0430"]),
+  scriptEntry("garage", "garage", "\u0413\u0430\u0440\u0430\u0436", 1642, -1520, 13.5, 55, 0, ["garage", "impound"], ["\u0433\u0430\u0440\u0430\u0436", "\u0448\u0442\u0440\u0430\u0444\u0441\u0442\u043E\u044F\u043D\u043A\u0430"]),
+  scriptEntry("parking", "service", "\u041F\u0430\u0440\u043A\u043E\u0432\u043A\u0430", 1630, -1890, 13.5, 55, 40, ["parking", "carpark"], ["\u043F\u0430\u0440\u043A\u043E\u0432\u043A\u0430"]),
+  scriptEntry("mechanic", "repair", "\u041C\u0435\u0445\u0430\u043D\u0438\u043A", 2064, -1831, 13.5, 27, 150, ["mechanic", "repair", "tuning", "tuner"], ["\u043C\u0435\u0445\u0430\u043D\u0438\u043A", "\u0440\u0435\u043C\u043E\u043D\u0442", "\u0442\u044E\u043D\u0438\u043D\u0433"]),
+  scriptEntry("food", "food", "\u0415\u0434\u0430", 2105, -1806, 13.5, 10, 25, ["food", "restaurant", "burger", "pizza", "diner", "cafe", "snack"], ["\u0435\u0434\u0430", "\u0440\u0435\u0441\u0442\u043E\u0440\u0430\u043D", "\u0431\u0443\u0440\u0433\u0435\u0440", "\u043F\u0438\u0446\u0446\u0430", "\u043A\u0430\u0444\u0435"]),
+  scriptEntry("clothes", "service", "\u041E\u0434\u0435\u0436\u0434\u0430", 2244, -1665, 15.5, 45, 120, ["clothes", "clothing", "wardrobe", "outfit"], ["\u043E\u0434\u0435\u0436\u0434\u0430"]),
+  scriptEntry("weapon", "weapon", "\u041E\u0440\u0443\u0436\u0435\u0439\u043D\u0430\u044F", 1368, -1279, 13.5, 6, 400, ["weapon", "gun", "ammo", "armory", "ammunation"], ["\u043E\u0440\u0443\u0436\u0438\u0435", "\u0430\u043C\u043C\u0443\u043D\u0438\u0446\u0438\u044F"]),
+  scriptEntry("faction", "duty", "\u0424\u0440\u0430\u043A\u0446\u0438\u044F", 2220, -1722, 13.5, 62, 0, ["faction", "gang", "mafia"], ["\u0444\u0440\u0430\u043A\u0446\u0438\u044F", "\u0431\u0430\u043D\u0434\u0430", "\u043C\u0430\u0444\u0438\u044F"]),
+  scriptEntry("fine", "fine", "\u0428\u0442\u0440\u0430\u0444", 1550, -1670, 16.2, 30, 300, ["fine", "ticket", "penalty"], ["\u0448\u0442\u0440\u0430\u0444"]),
+  scriptEntry("taxi", "taxi", "\u0422\u0430\u043A\u0441\u0438", 1808, -1938, 13.5, 55, 100, ["taxi", "cab"], ["\u0442\u0430\u043A\u0441\u0438"], { model: 420, button: "\u0412\u044B\u0434\u0430\u0442\u044C \u0442\u0430\u043A\u0441\u0438" }),
+  scriptEntry("bus", "job", "\u0410\u0432\u0442\u043E\u0431\u0443\u0441", 1788, -1900, 13.5, 56, 300, ["bus", "coach"], ["\u0430\u0432\u0442\u043E\u0431\u0443\u0441"]),
+  scriptEntry("truck", "job", "\u0414\u0430\u043B\u044C\u043D\u043E\u0431\u043E\u0439", 2780, -2456, 13.6, 51, 500, ["truck", "trucker", "cargo", "freight"], ["\u0434\u0430\u043B\u044C\u043D\u043E\u0431\u043E\u0439", "\u0433\u0440\u0443\u0437"]),
+  scriptEntry("fish", "job", "\u0420\u044B\u0431\u0430\u043B\u043A\u0430", 365, -2046, 7.8, 56, 200, ["fish", "fishing"], ["\u0440\u044B\u0431\u0430\u043B\u043A\u0430", "\u0440\u044B\u0431\u0430"]),
+  scriptEntry("mine", "job", "\u0428\u0430\u0445\u0442\u0430", -187, -310, 3, 56, 280, ["mine", "mining", "quarry"], ["\u0448\u0430\u0445\u0442\u0430", "\u043A\u0430\u0440\u044C\u0435\u0440"]),
+  scriptEntry("farm", "job", "\u0424\u0435\u0440\u043C\u0430", -382, -1430, 26, 56, 220, ["farm", "harvest", "crop"], ["\u0444\u0435\u0440\u043C\u0430", "\u0443\u0440\u043E\u0436\u0430\u0439"]),
+  scriptEntry("casino", "service", "\u041A\u0430\u0437\u0438\u043D\u043E", 1022, -1123, 23.8, 43, 100, ["casino", "gamble", "poker", "slot"], ["\u043A\u0430\u0437\u0438\u043D\u043E"]),
+  scriptEntry("hotel", "interior", "\u041E\u0442\u0435\u043B\u044C", 2230, -1158, 25.8, 35, 0, ["hotel", "motel", "inn"], ["\u043E\u0442\u0435\u043B\u044C", "\u043C\u043E\u0442\u0435\u043B\u044C"]),
+  scriptEntry("airport", "teleport", "\u0410\u044D\u0440\u043E\u043F\u043E\u0440\u0442", 1684, -2337, 13.5, 5, 0, ["airport", "plane", "flight"], ["\u0430\u044D\u0440\u043E\u043F\u043E\u0440\u0442", "\u0441\u0430\u043C\u043E\u043B\u0451\u0442", "\u0441\u0430\u043C\u043E\u043B\u0435\u0442"], { dest: [1684, -2337, 13.5, 0, 0], button: "\u0412 \u0430\u044D\u0440\u043E\u043F\u043E\u0440\u0442" }),
+  scriptEntry("prison", "interior", "\u0422\u044E\u0440\u044C\u043C\u0430", 173, 1390, 10.7, 30, 0, ["prison", "jail"], ["\u0442\u044E\u0440\u044C\u043C\u0430"]),
+  scriptEntry("school", "service", "\u0428\u043A\u043E\u043B\u0430", -2026, -100, 35, 45, 80, ["school", "university", "college"], ["\u0448\u043A\u043E\u043B\u0430", "\u0443\u043D\u0438\u0432\u0435\u0440\u0441\u0438\u0442\u0435\u0442"]),
+  scriptEntry("church", "service", "\u0426\u0435\u0440\u043A\u043E\u0432\u044C", 1480, -1670, 14.5, 45, 0, ["church", "chapel"], ["\u0446\u0435\u0440\u043A\u043E\u0432\u044C"]),
+  scriptEntry("bar", "interior", "\u0411\u0430\u0440", 1836, -1682, 13.4, 48, 0, ["bar", "pub", "club", "nightclub"], ["\u0431\u0430\u0440", "\u043A\u043B\u0443\u0431"]),
+  scriptEntry("gym", "service", "\u0421\u043F\u043E\u0440\u0442\u0437\u0430\u043B", 2229, -1722, 13.6, 54, 60, ["gym", "fitness"], ["\u0441\u043F\u043E\u0440\u0442\u0437\u0430\u043B"]),
+  scriptEntry("insurance", "service", "\u0421\u0442\u0440\u0430\u0445\u043E\u0432\u043A\u0430", 1488, -1760, 18.8, 52, 250, ["insurance"], ["\u0441\u0442\u0440\u0430\u0445\u043E\u0432\u043A\u0430"]),
+  scriptEntry("warehouse", "interior", "\u0421\u043A\u043B\u0430\u0434", 2200, -2260, 13.5, 51, 0, ["warehouse", "storage"], ["\u0441\u043A\u043B\u0430\u0434"]),
+  scriptEntry("delivery", "delivery", "\u0414\u043E\u0441\u0442\u0430\u0432\u043A\u0430", 1833, -1850, 13.6, 51, 300, ["delivery", "courier", "mail", "post"], ["\u0434\u043E\u0441\u0442\u0430\u0432\u043A\u0430", "\u043F\u043E\u0447\u0442\u0430", "\u043A\u0443\u0440\u044C\u0435\u0440"]),
+  scriptEntry("pharmacy", "heal", "\u0410\u043F\u0442\u0435\u043A\u0430", 1210, -1320, 14.5, 22, 80, ["pharmacy", "drugstore"], ["\u0430\u043F\u0442\u0435\u043A\u0430"]),
+  scriptEntry("fire", "duty", "\u041F\u043E\u0436\u0430\u0440\u043D\u0430\u044F", 1740, -1450, 13.5, 20, 0, ["firefighter"], ["\u043F\u043E\u0436\u0430\u0440\u043D\u0430\u044F"]),
+  scriptEntry("news", "job", "\u041D\u043E\u0432\u043E\u0441\u0442\u0438", 1640, -2240, 13.5, 45, 200, ["news", "reporter"], ["\u043D\u043E\u0432\u043E\u0441\u0442\u0438"]),
+  scriptEntry("radio", "service", "\u0420\u0430\u0434\u0438\u043E", 1650, -2230, 13.5, 45, 30, ["radio"], ["\u0440\u0430\u0434\u0438\u043E"]),
+  scriptEntry("auction", "service", "\u0410\u0443\u043A\u0446\u0438\u043E\u043D", 2140, -1160, 24, 52, 100, ["auction"], ["\u0430\u0443\u043A\u0446\u0438\u043E\u043D"]),
+  scriptEntry("pawn", "shop", "\u041B\u043E\u043C\u0431\u0430\u0440\u0434", 1920, -1780, 13.5, 52, 70, ["pawn", "pawnshop"], ["\u043B\u043E\u043C\u0431\u0430\u0440\u0434"]),
+  scriptEntry("jewelry", "shop", "\u042E\u0432\u0435\u043B\u0438\u0440", 1100, -1490, 15.8, 52, 500, ["jewelry", "gold"], ["\u044E\u0432\u0435\u043B\u0438\u0440"]),
+  scriptEntry("barber", "service", "\u041F\u0430\u0440\u0438\u043A\u043C\u0430\u0445\u0435\u0440", 2070, -1790, 13.5, 7, 40, ["barber", "haircut"], ["\u043F\u0430\u0440\u0438\u043A\u043C\u0430\u0445\u0435\u0440", "\u0431\u0430\u0440\u0431\u0435\u0440"]),
+  scriptEntry("tattoo", "service", "\u0422\u0430\u0442\u0443", 2068, -1775, 13.5, 7, 90, ["tattoo"], ["\u0442\u0430\u0442\u0443"]),
+  scriptEntry("paint", "service", "\u041F\u043E\u043A\u0440\u0430\u0441\u043A\u0430", 2075, -1835, 13.5, 27, 60, ["paint"], ["\u043F\u043E\u043A\u0440\u0430\u0441\u043A\u0430"]),
+  scriptEntry("carwash", "service", "\u041C\u043E\u0439\u043A\u0430", 1910, -1785, 13.5, 27, 30, ["carwash"], ["\u043C\u043E\u0439\u043A\u0430"]),
+  scriptEntry("toll", "service", "\u041F\u043B\u0430\u0442\u043D\u0430\u044F \u0434\u043E\u0440\u043E\u0433\u0430", 70, -1530, 5, 43, 20, ["toll"], ["\u043F\u043B\u0430\u0442\u043D\u0430\u044F \u0434\u043E\u0440\u043E\u0433\u0430"]),
+  scriptEntry("lottery", "service", "\u041B\u043E\u0442\u0435\u0440\u0435\u044F", 1490, -1755, 18.8, 52, 50, ["lottery"], ["\u043B\u043E\u0442\u0435\u0440\u0435\u044F"]),
+  scriptEntry("race", "service", "\u0413\u043E\u043D\u043A\u0430", 2700, -1810, 10, 53, 100, ["race", "drift"], ["\u0433\u043E\u043D\u043A\u0430", "\u0434\u0440\u0438\u0444\u0442"]),
+  scriptEntry("army", "duty", "\u0410\u0440\u043C\u0438\u044F", 2750, -2450, 13.6, 30, 0, ["army", "military"], ["\u0430\u0440\u043C\u0438\u044F"]),
+  scriptEntry("border", "duty", "\u0413\u0440\u0430\u043D\u0438\u0446\u0430", 50, -1520, 5, 30, 0, ["border", "customs"], ["\u0433\u0440\u0430\u043D\u0438\u0446\u0430", "\u0442\u0430\u043C\u043E\u0436\u043D\u044F"]),
+  scriptEntry("port", "job", "\u041F\u043E\u0440\u0442", 2785, -2455, 13.6, 9, 350, ["port", "dock", "harbor", "boat"], ["\u043F\u043E\u0440\u0442", "\u043F\u0440\u0438\u0447\u0430\u043B", "\u043B\u043E\u0434\u043A\u0430"]),
+  scriptEntry("heli", "taxi", "\u0412\u0435\u0440\u0442\u043E\u043B\u0451\u0442", 1545, -1353, 329, 5, 1500, ["helicopter"], ["\u0432\u0435\u0440\u0442\u043E\u043B\u0451\u0442", "\u0432\u0435\u0440\u0442\u043E\u043B\u0435\u0442"], { model: 487, button: "\u0412\u044B\u0434\u0430\u0442\u044C \u0432\u0435\u0440\u0442\u043E\u043B\u0451\u0442" }),
+  scriptEntry("bike", "taxi", "\u041F\u0440\u043E\u043A\u0430\u0442 \u0432\u0435\u043B\u043E\u0441\u0438\u043F\u0435\u0434\u043E\u0432", 1680, -2230, 13.5, 55, 40, ["bicycle", "scooter"], ["\u0432\u0435\u043B\u043E\u0441\u0438\u043F\u0435\u0434", "\u0441\u043A\u0443\u0442\u0435\u0440"], { model: 481, button: "\u0412\u0437\u044F\u0442\u044C \u0432\u0435\u043B\u043E\u0441\u0438\u043F\u0435\u0434" }),
+  scriptEntry("trash", "job", "\u041C\u0443\u0441\u043E\u0440", 2205, -1990, 13.5, 56, 180, ["trash", "garbage"], ["\u043C\u0443\u0441\u043E\u0440"]),
+  scriptEntry("factory", "job", "\u0417\u0430\u0432\u043E\u0434", 2210, -2265, 13.5, 51, 260, ["factory", "plant"], ["\u0437\u0430\u0432\u043E\u0434"]),
+  scriptEntry("lumber", "job", "\u041B\u0435\u0441\u043E\u043F\u0438\u043B\u043A\u0430", -500, -80, 63, 56, 240, ["lumber", "sawmill"], ["\u043B\u0435\u0441\u043E\u043F\u0438\u043B\u043A\u0430"]),
+  scriptEntry("hunter", "job", "\u041E\u0445\u043E\u0442\u0430", -690, -1450, 12, 56, 260, ["hunter", "hunting"], ["\u043E\u0445\u043E\u0442\u0430"]),
+  scriptEntry("diving", "job", "\u0414\u0430\u0439\u0432\u0438\u043D\u0433", 360, -2055, 7.8, 56, 300, ["diving"], ["\u0434\u0430\u0439\u0432\u0438\u043D\u0433"]),
+  scriptEntry("scrap", "job", "\u0421\u0432\u0430\u043B\u043A\u0430", 2400, -2080, 13.5, 51, 200, ["scrap", "salvage"], ["\u0441\u0432\u0430\u043B\u043A\u0430"]),
+  scriptEntry("craft", "service", "\u041A\u0440\u0430\u0444\u0442", 2410, -2070, 13.5, 11, 75, ["crafting"], ["\u043A\u0440\u0430\u0444\u0442"]),
+  scriptEntry("phone", "service", "\u0422\u0435\u043B\u0435\u0444\u043E\u043D", 1830, -1760, 13.5, 45, 150, ["phone"], ["\u0442\u0435\u043B\u0435\u0444\u043E\u043D"]),
+  scriptEntry("gps", "teleport", "\u041D\u0430\u0432\u0438\u0433\u0430\u0442\u043E\u0440", 1481, -1760, 18.8, 41, 0, ["gps", "navigator"], ["\u043D\u0430\u0432\u0438\u0433\u0430\u0442\u043E\u0440"], { dest: [1481, -1767, 18.8, 0, 0], button: "\u041C\u0435\u0442\u043A\u0430 \u043D\u0430 \u043A\u0430\u0440\u0442\u0435" }),
+  scriptEntry("elevator", "interior", "\u041B\u0438\u0444\u0442", 1564, -1670, 16.2, 45, 0, ["elevator"], ["\u043B\u0438\u0444\u0442"]),
+  scriptEntry("spawn", "teleport", "\u0421\u043F\u0430\u0432\u043D", 1642, -2334, 13.5, 41, 0, ["spawn"], ["\u0441\u043F\u0430\u0432\u043D"], { dest: [1642, -2334, 13.5, 0, 0], button: "\u041D\u0430 \u0441\u043F\u0430\u0432\u043D" }),
+  scriptEntry("admin", "service", "\u0410\u0434\u043C\u0438\u043D", 1481, -1755, 18.8, 61, 0, ["admin"], ["\u0430\u0434\u043C\u0438\u043D"]),
+  scriptEntry("radar", "fine", "\u0420\u0430\u0434\u0430\u0440", 100, -1500, 6, 30, 150, ["radar", "speedcam"], ["\u0440\u0430\u0434\u0430\u0440"]),
+  scriptEntry("vending", "shop", "\u0410\u0432\u0442\u043E\u043C\u0430\u0442", 1836, -1848, 13.6, 17, 15, ["vending"], ["\u0430\u0432\u0442\u043E\u043C\u0430\u0442"]),
+  scriptEntry("court", "documents", "\u0421\u0443\u0434", 1484, -1730, 14.5, 33, 500, ["court", "lawyer"], ["\u0441\u0443\u0434", "\u0430\u0434\u0432\u043E\u043A\u0430\u0442"]),
+  scriptEntry("metro", "teleport", "\u041C\u0435\u0442\u0440\u043E", 1680, -1950, 13.5, 41, 20, ["metro", "subway", "train"], ["\u043C\u0435\u0442\u0440\u043E", "\u043F\u043E\u0435\u0437\u0434"], { dest: [820, -1360, 13.5, 0, 0], button: "\u0421\u0435\u0441\u0442\u044C \u0432 \u043C\u0435\u0442\u0440\u043E" }),
+  scriptEntry("ferry", "teleport", "\u041F\u0430\u0440\u043E\u043C", 2780, -2490, 13.6, 9, 40, ["ferry"], ["\u043F\u0430\u0440\u043E\u043C"], { dest: [-1980, 160, 27, 0, 0], button: "\u041D\u0430 \u043F\u0430\u0440\u043E\u043C" })
+];
+function includesWord(text, word) {
+  const w = String(word || "").toLowerCase();
+  if (!w) return false;
+  if (w.includes(" ")) return text.includes(w);
+  const escaped = w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp("(^|[^a-z0-9\\u0430-\\u044F\\u0451])" + escaped + "([^a-z0-9\\u0430-\\u044F\\u0451]|$)", "i").test(text);
+}
+function lookupScript(name) {
+  const text = String(name || "").toLowerCase();
+  let best = null;
+  for (const entry of WORD_BOOK) {
+    for (const word of entry.words) {
+      if (!includesWord(text, word)) continue;
+      if (!best || word.length > best.len) best = { len: word.length, entry };
+    }
+  }
+  return best ? best.entry : null;
+}
 function scriptTopic(name) {
-  const n = String(name || "").toLowerCase();
-  if (/bank|\u0431\u0430\u043D\u043A|atm|\u0431\u0430\u043D\u043A\u043E\u043C\u0430\u0442/.test(n)) return "bank";
-  if (/shop|\u043C\u0430\u0433\u0430\u0437|store|\u043B\u0430\u0440\u0451\u043A|\u043B\u0430\u0440\u0435\u043A/.test(n)) return "shop";
-  if (/garage|\u0433\u0430\u0440\u0430\u0436|\u0430\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D|vehicle/.test(n)) return "garage";
-  if (/job|\u0440\u0430\u0431\u043E\u0442|\u0444\u0435\u0440\u043C|\u0448\u0430\u0445\u0442/.test(n)) return "job";
-  if (/house|\u0434\u043E\u043C|\u043A\u0432\u0430\u0440\u0442\u0438\u0440|hotel|\u043E\u0442\u0435\u043B/.test(n)) return "house";
-  return "generic";
+  const spec = lookupScript(name);
+  return spec ? spec.topic : "generic";
+}
+function offersFor(spec) {
+  if (spec.extra && spec.extra.offers) return spec.extra.offers;
+  const p = spec.price || 0;
+  const model = spec.extra && spec.extra.model || 0;
+  const button = spec.extra && spec.extra.button;
+  switch (spec.kind) {
+    case "documents":
+      return [
+        { id: "passport", label: "\u041F\u0430\u0441\u043F\u043E\u0440\u0442", price: 500, effect: "data" },
+        { id: "driver", label: "\u041F\u0440\u0430\u0432\u0430", price: 1000, effect: "data" },
+        { id: "weaponlic", label: "\u041B\u0438\u0446\u0435\u043D\u0437\u0438\u044F \u043D\u0430 \u043E\u0440\u0443\u0436\u0438\u0435", price: 2500, effect: "data" }
+      ];
+    case "rental":
+      return [
+        { id: "bike", label: "\u0412\u0435\u043B\u043E\u0441\u0438\u043F\u0435\u0434", price: 50, model: 481, effect: "vehicle" },
+        { id: "sultan", label: "Sultan", price: 400, model: 560, effect: "vehicle" },
+        { id: "sentinel", label: "Sentinel", price: 700, model: 405, effect: "vehicle" }
+      ];
+    case "dealer":
+      return [
+        { id: "sultan", label: "Sultan", price: 35000, model: 560, effect: "vehicle" },
+        { id: "cheetah", label: "Cheetah", price: 90000, model: 415, effect: "vehicle" },
+        { id: "infernus", label: "Infernus", price: 150000, model: 411, effect: "vehicle" }
+      ];
+    case "heal":
+      return [{ id: "heal", label: "\u041B\u0435\u0447\u0438\u0442\u044C\u0441\u044F", price: p || 200, effect: "heal" }];
+    case "fuel":
+      return [{ id: "fuel", label: "\u041F\u043E\u043B\u043D\u044B\u0439 \u0431\u0430\u043A", price: p || 80, effect: "fuel" }];
+    case "food":
+      return [{ id: "food", label: "\u041F\u043E\u0435\u0441\u0442\u044C", price: p || 25, effect: "health" }];
+    case "weapon":
+      return [{ id: "pistol", label: "\u041F\u0438\u0441\u0442\u043E\u043B\u0435\u0442", price: p || 400, weapon: 22, effect: "weapon" }];
+    case "repair":
+      return [{ id: "fix", label: "\u041F\u043E\u0447\u0438\u043D\u0438\u0442\u044C", price: p || 150, effect: "repair" }];
+    case "job":
+      return [
+        { id: "start", label: "\u041D\u0430\u0447\u0430\u0442\u044C \u0441\u043C\u0435\u043D\u0443", price: 0, effect: "job-start" },
+        { id: "stop", label: "\u0417\u0430\u043A\u043E\u043D\u0447\u0438\u0442\u044C \u0441\u043C\u0435\u043D\u0443", price: 0, reward: p || 250, effect: "job-stop" }
+      ];
+    case "duty":
+      return [
+        { id: "on", label: "\u041D\u0430 \u0441\u043B\u0443\u0436\u0431\u0443", price: 0, effect: "duty" },
+        { id: "off", label: "\u0421\u043E \u0441\u043B\u0443\u0436\u0431\u044B", price: 0, effect: "duty" }
+      ];
+    case "interior":
+      return [{ id: "enter", label: "\u0412\u043E\u0439\u0442\u0438", price: 0, effect: "enter" }];
+    case "taxi":
+      return [{ id: "cab", label: button || "\u0412\u044B\u0434\u0430\u0442\u044C \u0442\u0440\u0430\u043D\u0441\u043F\u043E\u0440\u0442", price: p || 0, model: model || 420, effect: "vehicle" }];
+    case "delivery":
+      return [{ id: "order", label: "\u0421\u0434\u0430\u0442\u044C \u0437\u0430\u043A\u0430\u0437", price: 0, reward: p || 300, effect: "money" }];
+    case "teleport":
+      return [{ id: "go", label: button || "\u041F\u0435\u0440\u0435\u0439\u0442\u0438", price: p || 0, effect: "tp" }];
+    case "garage":
+      return [{ id: "spawn", label: "\u0414\u043E\u0441\u0442\u0430\u0442\u044C \u043C\u0430\u0448\u0438\u043D\u0443", price: 0, model: model || 560, effect: "vehicle" }];
+    case "shop":
+      return [{ id: "item", label: "\u041A\u0443\u043F\u0438\u0442\u044C", price: p || 50, effect: "message" }];
+    case "fine":
+      return [{ id: "pay", label: "\u041E\u043F\u043B\u0430\u0442\u0438\u0442\u044C \u0448\u0442\u0440\u0430\u0444", price: p || 300, effect: "message" }];
+    default:
+      return [{ id: "pay", label: button || "\u041E\u043F\u043B\u0430\u0442\u0438\u0442\u044C", price: p || 0, effect: "message" }];
+  }
+}
+function dimOfTopic(topic) {
+  let h = 0;
+  for (const ch of String(topic || "")) h = (h + ch.charCodeAt(0)) % 50;
+  return 20 + h;
+}
+function renderPlace(intent, spec) {
+  const id = intent.slug;
+  const offers = offersFor(spec);
+  const rows = offers.map((o) => {
+    return `  { id = ${luaQuote(o.id)}, label = ${luaQuote(o.label)}, price = ${o.price | 0}, model = ${o.model | 0}, weapon = ${o.weapon | 0}, reward = ${o.reward | 0}, effect = ${luaQuote(o.effect)} }`;
+  }).join(",\n");
+  const [x, y, z] = spec.pos;
+  const dest = spec.extra && spec.extra.dest || [2233.6, -1114.5, 1050.9, 5, dimOfTopic(spec.topic)];
+  const blip = spec.blip || 41;
+  const title = luaQuote(spec.title || intent.title);
+  const closeY = 52 + offers.length * 40;
+  const height = closeY + 48;
+  if (intent.side === "client") {
+    return `local POS = { x = ${x}, y = ${y}, z = ${z} }
+local OFFERS = {
+${rows}
+}
+local marker, blip, window, labelStatus
+
+local function setStatus(text)
+  if isElement(labelStatus) then guiSetText(labelStatus, text) end
+end
+
+local function closeUi()
+  if isElement(window) then destroyElement(window) end
+  window, labelStatus = nil, nil
+  showCursor(false)
+  guiSetInputEnabled(false)
+end
+
+local function openUi()
+  if isElement(window) or isPedDead(localPlayer) then return end
+  showCursor(true)
+  guiSetInputEnabled(true)
+  local sw, sh = guiGetScreenSize()
+  window = guiCreateWindow((sw - 360) / 2, (sh - ${height}) / 2, 360, ${height}, ${title}, false)
+  guiWindowSetSizable(window, false)
+  labelStatus = guiCreateLabel(16, 28, 328, 18, ${title}, false, window)
+  for _, offer in ipairs(OFFERS) do
+    local caption = offer.price > 0 and (offer.label .. "  $" .. offer.price) or offer.label
+    local btn = guiCreateButton(16, 48 + (_ - 1) * 40, 328, 34, caption, false, window)
+    addEventHandler("onClientGUIClick", btn, function()
+      setStatus("\u0417\u0430\u043F\u0440\u043E\u0441\u2026")
+      triggerServerEvent("${id}:use", resourceRoot, offer.id)
+    end, false)
+  end
+  local closeBtn = guiCreateButton(16, ${closeY}, 328, 32, "\u0417\u0430\u043A\u0440\u044B\u0442\u044C", false, window)
+  addEventHandler("onClientGUIClick", closeBtn, function() closeUi() end, false)
+end
+
+addEventHandler("onClientResourceStart", resourceRoot, function()
+  marker = createMarker(POS.x, POS.y, POS.z - 1, "cylinder", 1.5, 232, 145, 48, 150)
+  blip = createBlip(POS.x, POS.y, POS.z, ${blip}, 2, 255, 255, 255, 255, 0, 300)
+  addEventHandler("onClientMarkerHit", marker, function(hit, dim)
+    if hit ~= localPlayer or not dim or isPedInVehicle(localPlayer) then return end
+    openUi()
+  end)
+  addEventHandler("onClientMarkerLeave", marker, function(hit, dim)
+    if hit == localPlayer and dim then closeUi() end
+  end)
+end)
+
+addEventHandler("onClientRender", root, function()
+  if not isElement(marker) or isElement(window) then return end
+  local px, py, pz = getElementPosition(localPlayer)
+  local mx, my, mz = getElementPosition(marker)
+  if getDistanceBetweenPoints3D(px, py, pz, mx, my, mz) > 12 then return end
+  local sx, sy = getScreenFromWorldPosition(mx, my, mz + 1.1)
+  if not sx then return end
+  dxDrawText(${title}, sx - 90, sy, sx + 90, sy + 20, tocolor(255, 255, 255, 230), 1, "default-bold", "center")
+end)
+
+addEventHandler("onClientResourceStop", resourceRoot, function()
+  closeUi()
+  if isElement(marker) then destroyElement(marker) end
+  if isElement(blip) then destroyElement(blip) end
+end)
+
+bindKey("backspace", "down", function()
+  if isElement(window) then closeUi() end
+end)
+
+bindKey("f", "down", function()
+  triggerServerEvent("${id}:leave", resourceRoot)
+end)
+
+addEvent("${id}:result", true)
+addEventHandler("${id}:result", resourceRoot, function(ok, message)
+  outputChatBox("[" .. ${title} .. "] " .. tostring(message or ""), ok and 90 or 255, ok and 200 or 90, 90)
+  setStatus(tostring(message or ""))
+end)
+`;
+  }
+  return `local POS = { x = ${x}, y = ${y}, z = ${z} }
+local DEST = { x = ${dest[0]}, y = ${dest[1]}, z = ${dest[2]}, int = ${dest[3] || 0}, dim = ${dest[4] || 0} }
+local RANGE = 6
+local DATA_PREFIX = "${id}."
+local OFFERS = {
+${rows}
+}
+local spawned, outside, inside, workers = {}, {}, {}, {}
+
+local function findOffer(offerId)
+  for _, offer in ipairs(OFFERS) do
+    if offer.id == offerId then return offer end
+  end
+end
+
+local function nearPlace(player)
+  local px, py, pz = getElementPosition(player)
+  return getDistanceBetweenPoints3D(px, py, pz, POS.x, POS.y, POS.z) <= RANGE
+end
+
+local function reply(player, ok, message)
+  triggerClientEvent(player, "${id}:result", resourceRoot, ok, message)
+end
+
+local function playerOf()
+  local player = client
+  if not isElement(player) or getElementType(player) ~= "player" then return nil end
+  if isPedDead(player) and not nearPlace(player) then return nil end
+  if not nearPlace(player) then
+    reply(player, false, "\u041F\u043E\u0434\u043E\u0439\u0434\u0438 \u043A \u043C\u0435\u0442\u0443")
+    return nil
+  end
+  return player
+end
+
+addEvent("${id}:use", true)
+addEventHandler("${id}:use", resourceRoot, function(offerId)
+  local player = playerOf()
+  if not player then return end
+  local offer = findOffer(offerId)
+  if not offer then return reply(player, false, "\u041D\u0435\u0442 \u0442\u0430\u043A\u043E\u0433\u043E \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044F") end
+  if (offer.effect == "repair" or offer.effect == "fuel") and not getPedOccupiedVehicle(player) then
+    return reply(player, false, "\u0421\u044F\u0434\u044C \u0432 \u0442\u0440\u0430\u043D\u0441\u043F\u043E\u0440\u0442")
+  end
+  if offer.effect == "job-start" and workers[player] then return reply(player, false, "\u0421\u043C\u0435\u043D\u0430 \u0443\u0436\u0435 \u0438\u0434\u0451\u0442") end
+  if offer.effect == "job-stop" and not workers[player] then return reply(player, false, "\u0421\u043C\u0435\u043D\u0430 \u043D\u0435 \u043D\u0430\u0447\u0430\u0442\u0430") end
+  if offer.price > 0 and (getPlayerMoney(player) or 0) < offer.price then
+    return reply(player, false, "\u041D\u0435\u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E \u0434\u0435\u043D\u0435\u0433")
+  end
+  if offer.price > 0 then takePlayerMoney(player, offer.price) end
+  local note = "\u0413\u043E\u0442\u043E\u0432\u043E"
+  local effect = offer.effect
+  if effect == "vehicle" then
+    if isElement(spawned[player]) then destroyElement(spawned[player]) end
+    local px, py, pz = getElementPosition(player)
+    local _, _, rot = getElementRotation(player)
+    local veh = createVehicle(offer.model > 0 and offer.model or 560, px + 3, py, pz + 0.5, 0, 0, rot)
+    spawned[player] = veh
+    warpPedIntoVehicle(player, veh)
+    note = "\u0422\u0440\u0430\u043D\u0441\u043F\u043E\u0440\u0442 \u0432\u044B\u0434\u0430\u043D"
+  elseif effect == "heal" then
+    if isPedDead(player) then spawnPlayer(player, POS.x, POS.y, POS.z, 0, getElementModel(player), 0, 0) end
+    setElementHealth(player, 100)
+    note = "\u0422\u044B \u0437\u0434\u043E\u0440\u043E\u0432"
+  elseif effect == "health" then
+    setElementHealth(player, math.min(100, (getElementHealth(player) or 0) + 30))
+    note = "\u0421\u044B\u0442\u043E\u0441\u0442\u044C \u0432\u043E\u0441\u0441\u0442\u0430\u043D\u043E\u0432\u043B\u0435\u043D\u0430"
+  elseif effect == "weapon" then
+    giveWeapon(player, offer.weapon > 0 and offer.weapon or 22, 30, true)
+    note = "\u041E\u0440\u0443\u0436\u0438\u0435 \u0432\u044B\u0434\u0430\u043D\u043E"
+  elseif effect == "repair" then
+    fixVehicle(getPedOccupiedVehicle(player))
+    note = "\u0422\u0440\u0430\u043D\u0441\u043F\u043E\u0440\u0442 \u043F\u043E\u0447\u0438\u043D\u0435\u043D"
+  elseif effect == "fuel" then
+    setElementData(getPedOccupiedVehicle(player), "fuel", 100)
+    note = "\u0411\u0430\u043A \u043F\u043E\u043B\u043D\u044B\u0439"
+  elseif effect == "data" then
+    setElementData(player, DATA_PREFIX .. offer.id, true)
+    note = offer.label .. " \u043E\u0444\u043E\u0440\u043C\u043B\u0435\u043D"
+  elseif effect == "money" then
+    givePlayerMoney(player, offer.reward)
+    note = ("\u041E\u043F\u043B\u0430\u0442\u0430 $%d"):format(offer.reward)
+  elseif effect == "tp" then
+    setElementInterior(player, DEST.int)
+    setElementDimension(player, DEST.dim)
+    setElementPosition(player, DEST.x, DEST.y, DEST.z)
+    note = "\u0422\u043E\u0447\u043A\u0430 \u043E\u0442\u043A\u0440\u044B\u0442\u0430"
+  elseif effect == "duty" then
+    local on = offer.id == "on"
+    setElementData(player, DATA_PREFIX .. "duty", on)
+    note = on and "\u0421\u043B\u0443\u0436\u0431\u0430 \u043D\u0430\u0447\u0430\u0442\u0430" or "\u0421\u043B\u0443\u0436\u0431\u0430 \u0437\u0430\u043A\u043E\u043D\u0447\u0435\u043D\u0430"
+  elseif effect == "job-start" then
+    workers[player] = true
+    note = "\u0421\u043C\u0435\u043D\u0430 \u043D\u0430\u0447\u0430\u0442\u0430"
+  elseif effect == "job-stop" then
+    workers[player] = nil
+    givePlayerMoney(player, offer.reward)
+    note = ("\u041E\u043F\u043B\u0430\u0442\u0430 $%d"):format(offer.reward)
+  elseif effect == "enter" then
+    if inside[player] then return reply(player, false, "\u0422\u044B \u0443\u0436\u0435 \u0432\u043D\u0443\u0442\u0440\u0438") end
+    local px, py, pz = getElementPosition(player)
+    outside[player] = { x = px, y = py, z = pz, int = getElementInterior(player), dim = getElementDimension(player) }
+    setElementInterior(player, DEST.int)
+    setElementDimension(player, DEST.dim)
+    setElementPosition(player, DEST.x, DEST.y, DEST.z)
+    inside[player] = true
+    note = "\u0422\u044B \u0432\u043D\u0443\u0442\u0440\u0438. F \u2014 \u0432\u044B\u0439\u0442\u0438"
+  else
+    setElementData(player, DATA_PREFIX .. offer.id, true)
+    note = offer.label .. " \u0433\u043E\u0442\u043E\u0432\u043E"
+  end
+  reply(player, true, note)
+end)
+
+addEvent("${id}:leave", true)
+addEventHandler("${id}:leave", resourceRoot, function()
+  local player = client
+  if not isElement(player) or not inside[player] or not outside[player] then return end
+  local back = outside[player]
+  setElementInterior(player, back.int or 0)
+  setElementDimension(player, back.dim or 0)
+  setElementPosition(player, back.x, back.y, back.z)
+  inside[player] = nil
+  outside[player] = nil
+  reply(player, true, "\u0422\u044B \u0441\u043D\u0430\u0440\u0443\u0436\u0438")
+end)
+
+addEventHandler("onPlayerQuit", root, function()
+  if isElement(spawned[source]) then destroyElement(spawned[source]) end
+  spawned[source], outside[source], inside[source], workers[source] = nil, nil, nil, nil
+end)
+
+addEventHandler("onPlayerWasted", root, function()
+  workers[source] = nil
+end)
+`;
 }
 function mtaStarter(intent) {
   const id = intent.slug;
   const title = intent.title;
-  const q = luaQuote(title);
+  const display = intent.spec && intent.spec.title || title;
+  const q = luaQuote(display);
   const other = intent.side === "client" ? "server" : "client";
-  const head = `-- ${title} / ${intent.side}
+  const head = `-- ${display} / ${intent.side}
 -- \u041F\u0440\u0438\u043C\u0435\u0440 ${intent.side === "client" ? "\u043A\u043B\u0438\u0435\u043D\u0442\u0441\u043A\u043E\u0439" : "\u0441\u0435\u0440\u0432\u0435\u0440\u043D\u043E\u0439"} \u0447\u0430\u0441\u0442\u0438 \u0434\u043B\u044F MTA.
 -- \u041F\u0430\u0440\u0430: ${id} "${other}"
 `;
+  if (intent.spec && intent.spec.kind !== "bank") {
+    const body = renderPlace(intent, intent.spec);
+    if (body) return head + body;
+  }
   if (intent.topic === "bank" && intent.side === "client") {
     return head + `local POS = { x = 1481.0, y = -1767.0, z = 18.8 }
 local MAX_AMOUNT = 100000000
@@ -30898,7 +31300,7 @@ var require_app = __commonJS({
       modalHint.style.display = "block";
       if (mode === "create") {
         modalTitle.textContent = "\u041D\u043E\u0432\u044B\u0439 \u0444\u0430\u0439\u043B";
-        modalHint.textContent = "client.lua \u0441\u0440\u0430\u0437\u0443 \u0434\u043E\u0431\u0430\u0432\u0438\u0442 server.lua \u0438 meta.xml. bank \"client\" \u2014 \u0442\u043E \u0436\u0435 \u0434\u043B\u044F \u0431\u0430\u043D\u043A\u0430, \u0442\u043E\u043B\u044C\u043A\u043E Lua.";
+        modalHint.textContent = "client.lua \u0434\u043E\u0431\u0430\u0432\u0438\u0442 server.lua \u0438 meta.xml. \u0421\u043B\u043E\u0432\u0430\u0440\u044C: bank, cityhall, rental, dealership, hospital \u0438 \u0435\u0449\u0451 \u0441\u043E\u0442\u043D\u044F. \u041F\u043E-\u0440\u0443\u0441\u0441\u043A\u0438 \u0442\u043E\u0436\u0435: \u0431\u0430\u043D\u043A, \u043C\u044D\u0440\u0438\u044F, \u0430\u0440\u0435\u043D\u0434\u0430 \u0430\u0432\u0442\u043E, \u0430\u0432\u0442\u043E\u0441\u0430\u043B\u043E\u043D, \u0431\u043E\u043B\u044C\u043D\u0438\u0446\u0430.";
         fillModalLang("lua");
         modalInput.value = "untitled.lua";
         $("modal-ok").textContent = "\u0421\u043E\u0437\u0434\u0430\u0442\u044C";
