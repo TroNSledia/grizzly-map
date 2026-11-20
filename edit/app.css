@@ -144,7 +144,13 @@ button:disabled { opacity: 0.45; cursor: default; }
   font-size: 14px;
 }
 .cm-editor { height: 100%; }
-.cm-editor .cm-scroller { font-family: var(--font-code); line-height: 1.45; }
+.cm-editor .cm-scroller { font-family: var(--font-code); line-height: 1.45; overflow-x: auto; }
+.cm-editor .cm-content,
+.cm-editor .cm-line {
+  white-space: pre;
+  word-break: normal;
+  overflow-wrap: normal;
+}
 .cm-editor.cm-focused { outline: none; }
 
 .editor-dock {

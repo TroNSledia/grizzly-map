@@ -11,7 +11,7 @@
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <link rel="stylesheet" href="app.css?v=17" />
+  <link rel="stylesheet" href="app.css?v=18" />
   <script>
     (function () {
       if (!("serviceWorker" in navigator)) return;
@@ -21,7 +21,7 @@
         reloaded = true;
         location.reload();
       });
-      navigator.serviceWorker.register("./sw.js?b=17", { updateViaCache: "none" }).catch(function () {});
+      navigator.serviceWorker.register("./sw.js?b=18", { updateViaCache: "none" }).catch(function () {});
     })();
   </script>
 </head>
@@ -94,6 +94,6 @@
   <div class="toast" id="toast"></div>
   <input id="file-input" type="file" multiple hidden accept=".lua,.js,.ts,.tsx,.jsx,.mjs,.cjs,.py,.css,.html,.htm,.json,.md,.txt,.xml,.sql,.sh" />
 
-  <script type="module" src="app.js?v=17"></script>
+  <script type="module" src="app.js?v=18"></script>
 </body>
 </html>

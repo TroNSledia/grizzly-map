@@ -528,7 +528,7 @@ ${rows}
 local owned = {}
 
 local function findOffer(offerId)
-  for _, offer in ipairs(OFFERS) do
+  for index, offer in ipairs(OFFERS) do
     if offer.id == offerId then return offer end
   end
 end
@@ -601,7 +601,7 @@ addEventHandler("onPlayerQuit", root, function()
 end)
 
 addEventHandler("onResourceStop", resourceRoot, function()
-  for _, veh in pairs(owned) do
+  for key, veh in pairs(owned) do
     if isElement(veh) then destroyElement(veh) end
   end
 end)
@@ -720,7 +720,7 @@ ${rows}
 local spawned, outside, inside, workers = {}, {}, {}, {}
 
 local function findOffer(offerId)
-  for _, offer in ipairs(OFFERS) do
+  for index, offer in ipairs(OFFERS) do
     if offer.id == offerId then return offer end
   end
 end
@@ -31887,7 +31887,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js?b=17", { updateViaCache: "none" }).catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=18", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();
