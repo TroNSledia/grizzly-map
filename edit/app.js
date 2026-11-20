@@ -31702,7 +31702,7 @@ var require_app = __commonJS({
     });
     $("btn-install-dismiss").addEventListener("click", () => installBanner.classList.remove("show"));
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").catch(() => {
+      navigator.serviceWorker.register("./sw.js?b=14", { updateViaCache: "none" }).catch(() => {
       });
     }
     initTelegram();

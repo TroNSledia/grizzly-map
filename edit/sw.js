@@ -1,65 +1,53 @@
-﻿/* Service worker: полный офлайн после первого визита (бандл без CDN для редактора) */
-const CACHE = "grizzly-edit-pages-v13";
-const SHELL = [
-  "./",
-  "./index.html",
-  "./app.css",
-  "./app.js",
-  "./manifest.webmanifest",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
-];
+﻿/* Service worker: сеть без HTTP-кэша, чтобы телефон не оставлял старые вкладки языков. */
+const CACHE = "grizzly-edit-pages-v14";
+const BUILD = "14";
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  self.skipWaiting();
+  event.waitUntil(Promise.resolve());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
-    ).then(() => self.clients.claim())
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+    await self.clients.claim();
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    await Promise.all(windows.map((client) => {
+      try {
+        const url = new URL(client.url);
+        if (url.searchParams.get("b") === BUILD) return null;
+        url.searchParams.set("b", BUILD);
+        return client.navigate(url.toString());
+      } catch (e) {
+        return null;
+      }
+    }));
+  })());
 });
 
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-
-  const isCdn =
-    url.hostname === "cdn.jsdelivr.net" ||
-    url.hostname === "esm.sh" ||
-    url.hostname === "telegram.org" ||
-    url.hostname.endsWith("pyodide.org");
-
-  if (isCdn) {
-    event.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        const hit = await cache.match(req);
-        if (hit) return hit;
-        const res = await fetch(req);
-        if (res.ok) cache.put(req, res.clone());
-        return res;
-      })
-    );
-    return;
-  }
-
   if (url.origin !== self.location.origin) return;
 
-  event.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      try {
-        const res = await fetch(req);
-        if (res.ok) cache.put(req, res.clone());
-        return res;
-      } catch {
-        const hit = await cache.match(req);
-        if (hit) return hit;
-        if (req.mode === "navigate") return cache.match("./index.html");
-        throw new Error("offline");
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    try {
+      const res = await fetch(req, { cache: "no-store" });
+      if (res && res.ok) {
+        try { await cache.put(req, res.clone()); } catch (err) {}
       }
-    })
-  );
+      return res;
+    } catch (e) {
+      const hit = await cache.match(req);
+      if (hit) return hit;
+      if (req.mode === "navigate") {
+        const shell = await cache.match("./index.html");
+        if (shell) return shell;
+      }
+      throw e;
+    }
+  })());
 });
